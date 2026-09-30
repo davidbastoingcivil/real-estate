@@ -1,6 +1,6 @@
 export type Property = {
   id: string; slug: string; name: string; location: string; municipality: string; department: string;
-  price: number; area: number; type: "Casa" | "Lote" | "Apartamento" | "Villa" | "Comercial"; status: "En venta" | "En arriendo"; categories: ("Buy" | "Rent" | "Projects" | "Commercial")[]; bedrooms: number; bathrooms: number;
+  price: number; area: number; type: "Casa" | "Lote" | "Apartamento" | "Villa" | "Comercial"; status: "En venta" | "En arriendo" | "Vendido"; categories: ("Buy" | "Rent" | "Projects" | "Commercial")[]; bedrooms: number; bathrooms: number;
   image: string; gallery: string[]; description: string; lat: number; lng: number; featured?: boolean;
   amenities: string[]; payment: string[];
 };

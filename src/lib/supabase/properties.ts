@@ -28,7 +28,9 @@ export type PropertyDatabaseRow = {
 
 export function propertyFromDatabase(row: PropertyDatabaseRow): Property {
   const gallery = (row.images || []).filter((image): image is string => typeof image === "string" && image.length > 0);
-  const status: Property["status"] = row.status.toLowerCase().includes("arriendo") ? "En arriendo" : "En venta";
+  const status: Property["status"] = row.status.toLowerCase().includes("arriendo")
+    ? "En arriendo"
+    : row.status.toLowerCase().includes("vendido") ? "Vendido" : "En venta";
   const validCategories = (row.categories || []).filter((category): category is Property["categories"][number] =>
     ["Buy", "Rent", "Projects", "Commercial"].includes(category),
   );
@@ -76,7 +78,7 @@ export function propertyToDatabase(property: Property, isPublished: boolean) {
     bathrooms: property.bathrooms,
     area: property.area,
     type: property.type,
-    status: property.status === "En arriendo" ? "En Arriendo" : "En Venta",
+    status: property.status === "En arriendo" ? "En Arriendo" : property.status === "Vendido" ? "Vendido" : "En Venta",
     images: property.gallery,
     features: property.amenities,
     categories: property.categories,
