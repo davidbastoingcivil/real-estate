@@ -32,7 +32,7 @@ Usa los valores del proyecto Supabase activo. No subas `.env.local` al repositor
 
 ## Activar el administrador
 
-El panel está en `/admin`. Para habilitarlo, configura `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` en `.env.local` y en las variables de Vercel, ejecuta `supabase/schema.sql` en el SQL Editor de tu proyecto y crea la cuenta del encargado en Supabase Auth. En una base vacía, ejecuta luego `supabase/seed_properties.sql` para importar las 20 fichas iniciales; el script omite slugs que ya existan. Después, autoriza la cuenta desde el SQL Editor. El botón de estrella en cada ficha permite cambiar la propiedad destacada de la portada; solo puede existir una destacada al tiempo.
+El panel está en `/admin`. Usa `@supabase/ssr` para guardar y refrescar las sesiones en cookies; `src/proxy.ts` protege las rutas `/admin/*`, y el panel comprueba además que el usuario esté en la lista privada `admin_users`. Para habilitarlo, configura `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` en `.env.local` y en las variables de Vercel, ejecuta `supabase/schema.sql` en el SQL Editor de tu proyecto y crea la cuenta del encargado en Supabase Auth. En una base vacía, ejecuta luego `supabase/seed_properties.sql` para importar las 20 fichas iniciales; el script omite slugs que ya existan. Después, autoriza la cuenta desde el SQL Editor. El botón de estrella en cada ficha permite cambiar la propiedad destacada de la portada; solo puede existir una destacada al tiempo.
 
 En Supabase, confirma que el Data API esté habilitado y que el esquema `public` esté expuesto. El SQL concede permisos mínimos para las tablas; RLS limita los datos y operaciones disponibles por tipo de usuario.
 
