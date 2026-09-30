@@ -11,9 +11,14 @@ export default function PropertyRowActions({ id, title }: { id: number; title: s
   async function remove() {
     if (!window.confirm(`¿Eliminar “${title}” del catálogo? Esta acción no se puede deshacer.`)) return;
     setBusy(true);
-    const result = await deleteProperty(id);
-    if (!result.success) setError(result.error);
-    setBusy(false);
+    try {
+      const result = await deleteProperty(id);
+      if (!result.success) setError(result.error);
+    } catch {
+      setError("No se pudo eliminar. Revisa tu conexión e inténtalo de nuevo.");
+    } finally {
+      setBusy(false);
+    }
   }
   return <div className="admin-cms-actions">
     {error && <span role="alert" className="admin-cms-row-error">{error}</span>}

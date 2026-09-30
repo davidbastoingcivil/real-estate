@@ -28,6 +28,7 @@ export type PropertyDatabaseRow = {
 
 export function propertyFromDatabase(row: PropertyDatabaseRow): Property {
   const gallery = (row.images || []).filter((image): image is string => typeof image === "string" && image.length > 0);
+  const cover = gallery.find(image => !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(image)) || "";
   const status: Property["status"] = row.status.toLowerCase().includes("arriendo")
     ? "En arriendo"
     : row.status.toLowerCase().includes("vendido") ? "Vendido" : "En venta";
@@ -39,6 +40,7 @@ export function propertyFromDatabase(row: PropertyDatabaseRow): Property {
 
   return {
     id: row.slug,
+    databaseId: row.id,
     slug: row.slug,
     name: row.title,
     location: row.location,
@@ -51,7 +53,7 @@ export function propertyFromDatabase(row: PropertyDatabaseRow): Property {
     categories,
     bedrooms: Number(row.bedrooms || 0),
     bathrooms: Number(row.bathrooms || 0),
-    image: gallery[0] || "",
+    image: cover,
     gallery,
     description: row.description || "",
     lat: Number(row.lat),

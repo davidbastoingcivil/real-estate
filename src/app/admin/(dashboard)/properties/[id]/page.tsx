@@ -7,7 +7,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
   const id = Number(rawId);
   if (!Number.isSafeInteger(id) || id < 1) notFound();
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.from("properties").select("id,title,description,price,type,area,bedrooms,bathrooms,location,status,is_published,lat,lng")
+  const { data, error } = await supabase.from("properties").select("id,title,description,price,type,area,bedrooms,bathrooms,location,status,is_published,lat,lng,images")
     .eq("id", id).maybeSingle();
   if (error || !data) notFound();
   const status: PropertyFormData["status"] = !data.is_published ? "Oculto" : data.status.toLocaleLowerCase("es").includes("vendido") ? "Vendido" : "Disponible";
@@ -24,6 +24,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     status,
     lat: Number(data.lat || 0),
     lng: Number(data.lng || 0),
+    images: (data.images || []) as string[],
   };
   return <PropertyForm initialData={initialData}/>;
 }

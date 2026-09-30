@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowUpRight, Building2, MapPin, Plus } from "lucide-react";
+import { ArrowUpRight, Building2, Film, MapPin, Plus } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import DriveImage from "@/components/DriveImage";
 import PropertyRowActions from "./PropertyRowActions";
 
 type PropertyRow = {
@@ -38,7 +39,7 @@ export default async function AdminDashboardPage() {
       {properties.map(property => {
         const status = !property.is_published ? "Oculto" : property.status.toLocaleLowerCase("es").includes("vendido") ? "Vendido" : "Disponible";
         return <article className="admin-cms-card" key={property.id}>
-          <div className="admin-cms-photo">{property.images?.[0] ? <img src={property.images[0]} alt=""/> : <Building2 size={26}/>}</div>
+          <div className="admin-cms-photo">{property.images?.[0] && !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(property.images[0]) ? <DriveImage className="media-fill" src={property.images[0]} alt=""/> : property.images?.length ? <Film size={26}/> : <Building2 size={26}/>}</div>
           <div className="admin-cms-card-info">
             <div className="admin-cms-card-heading"><h2>{property.title}</h2><span className={`admin-cms-status ${status.toLowerCase()}`}>{status}</span></div>
             <div className="admin-cms-location"><MapPin size={14}/>{property.location}</div>

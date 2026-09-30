@@ -15,6 +15,7 @@ export type PropertyInput = {
   status: "Disponible" | "Vendido" | "Oculto";
   lat: number;
   lng: number;
+  images: string[];
 };
 
 type ActionResult = { success: true } | { success: false; error: string };
@@ -61,6 +62,7 @@ function dbValues(data: PropertyInput) {
     is_published: data.status !== "Oculto",
     lat: data.lat,
     lng: data.lng,
+    images: data.images.filter(url => typeof url === "string" && /^https?:\/\//i.test(url)),
     updated_at: new Date().toISOString(),
   };
 }
@@ -93,7 +95,7 @@ export async function createProperty(data: PropertyInput): Promise<ActionResult>
     }
     const { error } = await supabase.from("properties").insert({
       ...dbValues(data), slug,
-      images: [], features: [], categories: ["Buy"], payment: [], featured: false,
+      features: [], categories: ["Buy"], payment: [], featured: false,
     });
     if (error) throw error;
     refreshCatalog();

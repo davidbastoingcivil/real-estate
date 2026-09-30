@@ -2,7 +2,7 @@
 
 Sitio inmobiliario creado con Next.js App Router, TypeScript, Tailwind CSS 4, Leaflet y React Leaflet.
 
-Incluye búsqueda y filtros compartidos entre resultados y mapa, favoritos persistentes en el navegador, navegación móvil, perfiles y fichas de detalle. El contacto abre una conversación directa por WhatsApp; no requiere cuenta de usuario ni guarda datos personales en un backend.
+Incluye búsqueda y filtros compartidos entre resultados y mapa, favoritos persistentes en el navegador, navegación móvil, perfiles y fichas de detalle. Las fichas aceptan galerías con fotos y videos; además integran una calculadora financiera y un formulario de contacto conectado con Supabase.
 
 ## Desarrollo local
 
@@ -28,7 +28,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
 ```
 
-Usa los valores del proyecto Supabase activo. No subas `.env.local` al repositorio; ya está excluido por `.gitignore`. Después de agregar o cambiar variables, crea un nuevo deployment para que Next.js las incorpore. El mapa carga mosaicos públicos de OpenStreetMap y requiere conexión a internet en el navegador.
+Usa los valores del proyecto Supabase activo. No subas `.env.local` al repositorio; ya está excluido por `.gitignore`. Después de agregar o cambiar variables, crea un nuevo deployment para que Next.js las incorpore. El mapa consulta PostGIS por límites y carga mosaicos públicos de CARTO/OpenStreetMap; requiere conexión a internet en el navegador.
 
 ## Activar el administrador
 
@@ -43,6 +43,16 @@ on conflict (user_id) do nothing;
 ```
 
 Usa el correo real del encargado. Las políticas de Row Level Security dejan públicas las fichas publicadas y las fotos, y reservan cambios, borrados y cargas a los usuarios de esa lista. Nunca pongas claves `service_role` o secretas en variables `NEXT_PUBLIC_`.
+
+## Activar las funciones V2
+
+Esta actualización **no reemplaza ni vuelve a crear** la tabla `public.properties`. La migración `supabase/migrations/20260930_v2_gallery_map_leads.sql` añade coordenadas PostGIS, búsqueda RPC por área y la tabla de leads. Revisa y ejecuta ese archivo una sola vez en el SQL Editor del proyecto existente. Activa PostGIS en el esquema `extensions` y Vault antes de la migración; la migración prepara `pg_net`. La columna geográfica se completa con los valores existentes de `lat` y `lng`.
+
+El bucket público existente conserva el nombre `property-images`. En Supabase **Storage → Buckets → property-images → Edit bucket**, permite `image/jpeg`, `image/png`, `image/webp`, `image/avif`, `image/gif`, `video/mp4`, `video/webm` y `video/quicktime`, y fija el máximo en 25 MiB (también debe permitirlo el límite global del proyecto). La política de Storage sigue restringiendo las cargas al listado de administradores. Los enlaces de Drive añadidos desde el panel deben permitir visualización con enlace; al pegar un video selecciona el tipo “Video”.
+
+Para activar el webhook, guarda la URL de producción de n8n en **Supabase Vault** con el nombre `n8n_webhook_url`. La función de trigger usa `pg_net` de forma asíncrona: guardar un lead no espera ni falla si n8n está temporalmente fuera de servicio. Aún no hace falta ninguna variable nueva en Vercel; la URL de n8n se mantiene en Vault, nunca en código ni en una variable pública. Expón `public.leads` en la Data API si tu proyecto no expone ese esquema automáticamente.
+
+La calculadora ofrece una estimación de cuota con conversión de tasa efectiva anual a mes vencido y una aproximación de rentabilidad bruta y flujo mensual. No incluye costos de cierre, seguros, impuestos, administración, vacancia ni variaciones de tasa.
 
 ## Contacto
 
