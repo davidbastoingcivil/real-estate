@@ -1,0 +1,5 @@
+"use client";
+import { useRouter } from "next/navigation";
+import { Search, SlidersHorizontal } from "lucide-react";
+import { usePropertyApp } from "@/components/AppProvider";
+export default function HomeSearch(){const {filters,setFilters}=usePropertyApp();const router=useRouter();return <form className="home-search" onSubmit={e=>{e.preventDefault();router.push("/buscar");}}><label><Search size={18}/><span><small>UBICACIÓN O PROYECTO</small><input aria-label="Buscar por ubicación o proyecto" placeholder="¿Dónde quieres vivir?" value={filters.query} onChange={e=>setFilters({query:e.target.value})}/></span></label><div className="home-search-divider"/><label className="home-search-type"><SlidersHorizontal size={17}/><span><small>TIPO DE INMUEBLE</small><select value={filters.type} onChange={e=>setFilters({type:e.target.value})}><option>Todos</option><option>Casa</option><option>Villa</option><option>Apartamento</option><option>Lote</option><option>Comercial</option></select></span></label><button className="home-search-submit"><Search size={17}/><span>Buscar</span></button></form>;}
