@@ -216,3 +216,66 @@ body:has(.detail-page) .mobile-bottom-nav a.active,body:has(.app-page) .mobile-b
 .agent-bubble,.chat-hint{background:#202526;color:#e1e3dc}
 .saved-empty{color:#b7bcb6}
 
+/* Dark catalog cards keep text legible on every public app route. */
+.app-page .property-card{overflow:hidden;background:#202526;color:#f4f2ec;border:1px solid #ffffff18;box-shadow:0 8px 24px #0002}
+.app-page .property-card:hover{box-shadow:0 14px 30px #0004}
+.app-page .card-image{background:#252b2b}
+.app-page .card-tag{background:#111718e8;color:#f4f2ec;border:1px solid #ffffff20}
+.app-page .card-info h3{color:#f4f2ec}
+.app-page .card-location{color:#b8beb8}
+.app-page .card-specs{border-color:#424847}
+.app-page .card-specs span{color:#d0d3cd}
+.app-page .card-price{color:#f4f2ec}
+.app-page .card-price span{color:#b8beb8}
+.app-page .favorite-button{right:12px;top:12px;background:#111718d9;color:#f4f2ec;border:1px solid #ffffff35}
+.app-page .favorite-button.saved{color:#e7a39a}
+.app-page .reset-filters{color:#b8beb8}
+.app-page .search-field{background:#171c1d;border-color:#424847}
+.app-page .map-toggle:hover{border-color:var(--gold);color:var(--gold-light)}
+.app-page .profile-stats span{color:#b8beb8}
+.app-page .profile-option>span{color:#f1eee6}
+.app-page .profile-phone{color:#d8c393}
+
+@media(max-width:650px){
+  .app-page{width:min(92%,560px);padding:34px 0 calc(78px + env(safe-area-inset-bottom))}
+  .app-page-heading{text-align:center;margin-bottom:23px}
+  .app-page-heading .eyebrow{justify-content:center}
+  .app-page-heading h1{font-size:clamp(34px,9vw,42px);letter-spacing:-1.8px}
+  .app-page-heading>p{font-size:12px;color:#c0c5bf;line-height:1.65}
+  .search-layout{grid-template-columns:minmax(0,1fr);gap:20px}
+  .search-panel{padding:15px;border-radius:12px}
+  .search-field{min-height:48px;padding:10px 12px;border-radius:8px}
+  .search-field input{font-size:12px}
+  .filter-section{gap:9px;margin-top:17px}
+  .filter-title{font-size:11px;align-items:center;gap:8px}
+  .category-pills{gap:7px}
+  .category-pills button{padding:9px 11px;font-size:10px;border-radius:7px}
+  .filter-section select{padding:11px;font-size:12px;border-radius:7px}
+  .filter-pair{gap:9px}
+  .reset-filters{min-height:40px;font-size:10px}
+  .results-toolbar{gap:12px;font-size:12px}
+  .results-toolbar b span{display:block;margin-top:4px;font-size:10px}
+  .map-toggle{min-height:40px;padding:8px 11px;border-radius:7px;font-size:10px;white-space:nowrap}
+  .search-layout .results-panel .property-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+  .search-layout .card-image{height:auto;aspect-ratio:1.08;min-height:132px}
+  .app-page .card-tag{top:8px;left:8px;padding:6px 7px;font-size:7px;letter-spacing:0}
+  .app-page .favorite-button{right:8px;top:8px;width:30px;height:30px}
+  .app-page .card-arrow{right:8px;bottom:8px;width:29px;height:29px}
+  .app-page .card-info{padding:10px 10px 12px}
+  .app-page .card-location{font-size:9px;line-height:1.4;min-height:25px}
+  .app-page .card-info h3{font-size:14px;line-height:1.35;letter-spacing:-.2px;margin:5px 0 9px;min-height:38px}
+  .app-page .card-specs{gap:8px;padding-bottom:9px;flex-wrap:wrap}
+  .app-page .card-specs span{gap:4px;font-size:8px;white-space:nowrap}
+  .app-page .card-specs svg{width:12px;height:12px}
+  .app-page .card-price{gap:5px;padding-top:9px;flex-wrap:wrap}
+  .app-page .card-price span{font-size:8px}
+  .app-page .card-price b{font-size:10px}
+  .search-map,.search-map .map-loading{height:62dvh;min-height:350px}
+  .mobile-bottom-nav{background:#111718;border-color:#ffffff1a;box-shadow:0 -6px 24px #0004;padding-bottom:max(7px,env(safe-area-inset-bottom))}
+  .mobile-bottom-nav a{color:#aab0a9;font-size:9px}
+  .mobile-bottom-nav a.active{color:#dfbd7c}
+  .whatsapp{bottom:calc(78px + env(safe-area-inset-bottom));right:13px}
+  .profile-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .profile-stats b{font-size:18px}
+}
+
