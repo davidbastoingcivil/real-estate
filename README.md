@@ -28,7 +28,9 @@ NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
 ```
 
-Usa los valores del proyecto Supabase activo. No subas `.env.local` al repositorio; ya está excluido por `.gitignore`. Después de agregar o cambiar variables, crea un nuevo deployment para que Next.js las incorpore. El mapa consulta PostGIS por límites y carga mosaicos públicos de CARTO/OpenStreetMap; requiere conexión a internet en el navegador.
+Usa los valores del proyecto Supabase activo. No subas `.env.local` al repositorio; ya está excluido por `.gitignore`. Después de agregar o cambiar variables, crea un nuevo deployment para que Next.js las incorpore. El mapa consulta PostGIS por límites y usa el basemap vectorial ArcGIS Dark Gray. Configura `NEXT_PUBLIC_ARCGIS_API_KEY` en `.env.local` y en Vercel. La clave se usa en el navegador para solicitar los basemaps: restríngela en ArcGIS a los dominios de producción y preview que realmente uses y habilita solo el privilegio **Basemaps**. Si falta la clave localmente, el mapa conserva un mapa OpenStreetMap de respaldo. La búsqueda de propiedades se limita al área visible y espera brevemente tras cada movimiento antes de llamar a Supabase.
+
+El complemento actual de Esri declara compatibilidad con MapLibre GL 2–4, mientras que su módulo vectorial aún usa la importación `default` retirada en MapLibre 6. Esta app fija MapLibre GL 6.4.1 para incluir la corrección de seguridad y aplica una adaptación pequeña en `scripts/patch-esri-leaflet-vector.cjs` al instalar dependencias. `.npmrc` permite resolver el rango peer anterior. Verifica el mapa tras actualizar cualquiera de esos paquetes.
 
 ## Activar el administrador
 

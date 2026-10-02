@@ -6,13 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node scripts/patch-esri-leaflet-vector.cjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
+    "esri-leaflet": "^3.0.19",
+    "esri-leaflet-vector": "^4.3.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.468.0",
+    "maplibre-gl": "6.4.1",
     "next": "^16.3.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
