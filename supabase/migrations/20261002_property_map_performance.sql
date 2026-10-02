@@ -1,5 +1,39 @@
--- Optional additive map RPC for bounded, predictable spatial queries.
--- Preserves public.properties and all existing property records.
+-- Additive spatial support for property discovery. Existing property data and columns are preserved.
+create schema if not exists extensions;
+create extension if not exists postgis with schema extensions;
+
+alter table public.properties
+  add column if not exists coordinates extensions.geography(Point, 4326);
+
+create or replace function public.sync_property_coordinates()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.lat is null or new.lng is null or new.lat < -90 or new.lat > 90 or new.lng < -180 or new.lng > 180 then
+    new.coordinates := null;
+  else
+    new.coordinates := extensions.st_geogfromtext(format('SRID=4326;POINT(%s %s)', new.lng, new.lat));
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists properties_sync_coordinates on public.properties;
+create trigger properties_sync_coordinates
+before insert or update of lat, lng on public.properties
+for each row execute function public.sync_property_coordinates();
+
+update public.properties
+set coordinates = extensions.st_geogfromtext(format('SRID=4326;POINT(%s %s)', lng, lat))
+where coordinates is null
+  and lat between -90 and 90
+  and lng between -180 and 180;
+
+create index if not exists properties_coordinates_gist_idx
+  on public.properties using gist (coordinates);
+
 create or replace function public.get_properties_in_bounds_v2(
   bounds_wkt text,
   limit_count integer default 500
@@ -35,8 +69,9 @@ begin
   search_bounds := extensions.st_geogfromtext(bounds_wkt);
 
   return query
-  select p.id, p.title, p.slug, p.price, p.type, p.area, p.bedrooms, p.bathrooms,
-         p.location, p.lat, p.lng, p.status, p.images[1]
+  select p.id::bigint, p.title, p.slug, p.price, p.type, p.area,
+         p.bedrooms::integer, p.bathrooms::integer, p.location, p.lat, p.lng,
+         p.status, p.images[1]
   from public.properties as p
   where p.coordinates is not null
     and extensions.st_intersects(p.coordinates, search_bounds)
