@@ -1,9 +1,45 @@
 "use client";
-import Link from "next/link";
-import { useState, type FormEvent } from "react";
-import { ArrowLeft, KeyRound, ShieldCheck } from "lucide-react";
+
+import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-export default function AdminLoginPage(){const [email,setEmail]=useState("");const [password,setPassword]=useState("");const [message,setMessage]=useState("");const [busy,setBusy]=useState(false);const router=useRouter();async function handleLogin(event:FormEvent<HTMLFormElement>){event.preventDefault();const supabase=getSupabaseClient();if(!supabase){setMessage("Primero conecta el proyecto de Supabase en la configuración de la app.");return;}setBusy(true);setMessage("");const {data,error}=await supabase.auth.signInWithPassword({email,password});if(error||!data.user){setMessage("No pudimos iniciar sesión. Revisa tu correo y contraseña.");setBusy(false);return;}const {data:access,error:accessError}=await supabase.from("admin_users").select("user_id").eq("user_id",data.user.id).maybeSingle();if(accessError||!access){await supabase.auth.signOut();setMessage("Esta cuenta todavía no tiene permiso de administrador.");setBusy(false);return;}const requestedPath=new URLSearchParams(window.location.search).get("next");const nextPath=requestedPath?.startsWith("/")&&!requestedPath.startsWith("//")?requestedPath:"/admin";router.replace(nextPath);}
-return <main className="admin-login-page"><Link href="/" className="back-link"><ArrowLeft size={16}/> Volver al sitio</Link><section className="admin-login-card"><div className="admin-lock"><ShieldCheck size={23}/></div><div className="eyebrow"><span/> ÁREA PRIVADA</div><h1>Administrar el sitio</h1><p>Accede con la cuenta autorizada para gestionar propiedades y diseño.</p>{!supabaseConfigured&&<div className="admin-notice">Falta conectar Supabase. Copia las variables de <code>.env.example</code> en <code>.env.local</code> para activar el acceso.</div>}<form onSubmit={handleLogin}><label>Correo electrónico<input type="email" autoComplete="username" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com"/></label><label>Contraseña<input type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"/></label><button className="button button-dark" disabled={busy||!supabaseConfigured}><KeyRound size={16}/>{busy?"Ingresando…":"Ingresar al administrador"}</button></form>{message&&<p className="admin-error" role="alert">{message}</p>}<small>El acceso se controla con una lista privada de administradores.</small></section></main>;
+import { KeyRound, LoaderCircle } from "lucide-react";
+import { signInAdmin } from "./actions";
+
+export default function AdminLoginPage() {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState("");
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    const form = new FormData(event.currentTarget);
+    startTransition(async () => {
+      const result = await signInAdmin(String(form.get("identifier") ?? ""), String(form.get("password") ?? ""));
+      if (!result.success) {
+        setMessage(result.message ?? "No se pudo iniciar sesión. Revisa tus datos e inténtalo otra vez.");
+        return;
+      }
+      router.replace("/admin");
+      router.refresh();
+    });
+  }
+
+  return <main className="admin-login-page">
+    <section className="admin-login-card">
+      <div className="admin-lock"><KeyRound size={20}/></div>
+      <span className="eyebrow">DAVID BASTO · REAL ESTATE</span>
+      <h1>Acceso administrador</h1>
+      <p>Ingresa con tu usuario autorizado para gestionar propiedades y la presentación del sitio.</p>
+      {message && <div className="admin-error" role="alert">{message}</div>}
+      <form onSubmit={submit}>
+        <label htmlFor="identifier">Usuario o correo</label>
+        <input id="identifier" name="identifier" autoComplete="username" required placeholder="Usuario administrador"/>
+        <label htmlFor="password">Contraseña</label>
+        <input id="password" name="password" type="password" autoComplete="current-password" required/>
+        <button className="button button-dark" type="submit" disabled={pending}>{pending ? <><LoaderCircle size={15} className="spin"/> Verificando…</> : "Ingresar al panel"}</button>
+      </form>
+      <small>El acceso está protegido por Supabase Auth y la lista de administradores autorizados.</small>
+    </section>
+  </main>;
 }
