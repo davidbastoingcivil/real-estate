@@ -439,6 +439,7 @@ body:has(.detail-page) .mobile-bottom-nav a.active,body:has(.app-page) .mobile-b
 .admin-cms-remote-media{display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:8px;margin-top:13px}
 .admin-cms-remote-media input,.admin-cms-remote-media select{min-height:38px;padding:8px 10px;border:1px solid #dedbd1;background:#fff;color:#30342f;font:inherit;font-size:9px}
 .admin-cms-remote-media .button{min-height:38px;padding:0 11px;font-size:9px}
+.admin-cms-category-options{display:flex;flex-wrap:wrap;gap:8px 15px;margin-top:8px}.admin-cms-category-options label,.admin-cms-featured{display:flex;align-items:center;gap:7px;font-size:10px;color:#55594f}.admin-cms-category-options input,.admin-cms-featured input{accent-color:#b99a5d}.admin-cms-featured{margin-top:13px!important;font-weight:600}.admin-cms-form fieldset{min-width:0;border:1px solid #e7e4dc;padding:12px}.admin-cms-form fieldset legend{padding:0 5px;font-size:10px;color:#66695f}.admin-cms-media-kind{position:absolute;bottom:5px;left:5px;display:flex;align-items:center;gap:3px;padding:4px 6px;background:#10251be8;color:#fff;font-size:8px}.admin-cms-media-item>button{z-index:1}.admin-cms-media-item video{background:#111}
 @media(max-width:650px){
   .property-gallery{margin-top:17px}.property-gallery-stage{height:68vw;min-height:255px;max-height:430px}
   .property-gallery-arrow{width:36px;height:42px}.property-gallery-arrow.previous{left:8px}.property-gallery-arrow.next{right:8px}
