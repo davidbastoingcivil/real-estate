@@ -15,11 +15,12 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 const pin = L.divIcon({ className: "gold-pin-wrap", html: '<span class="gold-pin">✦</span>', iconSize: [36, 42], iconAnchor: [18, 38] });
 type Property = ReturnType<typeof usePropertyApp>["visibleProperties"][number];
 type MapPropertyRow = { id: number; title: string; slug: string; price: number | string; type: Property["type"]; area: number | string; bedrooms: number; bathrooms: number; location: string; lat: number | string; lng: number | string; status: string; image: string | null };
-type BasemapStyle = "arcgis/dark-gray" | "arcgis/streets" | "arcgis/imagery";
+type BasemapStyle = "arcgis/dark-gray" | "arcgis/streets" | "arcgis/imagery" | "osm";
 const basemapOptions: { id: BasemapStyle; label: string }[] = [
   { id: "arcgis/dark-gray", label: "ArcGIS oscuro" },
   { id: "arcgis/streets", label: "Calles" },
   { id: "arcgis/imagery", label: "Satélite" },
+  { id: "osm", label: "OpenStreetMap" },
 ];
 const located = (property: Property) => Number.isFinite(property.lat) && Number.isFinite(property.lng) && (property.lat !== 0 || property.lng !== 0);
 const unitPrice = (property: Property) => property.area > 0 ? property.price / property.area : null;
@@ -49,12 +50,17 @@ function ArcGISBasemap({ style, onStatus }: { style: BasemapStyle; onStatus: (st
 
     const addFallback = (status: BasemapStatus) => {
       if (disposed) return;
-      fallback = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      fallback = L.tileLayer(process.env.NEXT_PUBLIC_OSM_TILE_URL?.trim() || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
       }).addTo(map);
       onStatus(status);
     };
+
+    if (style === "osm") {
+      addFallback("ready");
+      return () => { disposed = true; if (fallback) map.removeLayer(fallback); };
+    }
 
     if (!apikey) {
       addFallback("missing-key");

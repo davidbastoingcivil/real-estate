@@ -7,6 +7,7 @@ import { ArrowLeft, Film, ImagePlus, Link2, LoaderCircle, Save, Trash2, Upload, 
 import { createProperty, createPropertyType, updateProperty, type PropertyInput } from "@/app/admin/(dashboard)/actions";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import DriveImage from "@/components/DriveImage";
+import OsmEnrichmentButton from "@/components/admin/OsmEnrichmentButton";
 
 export type PropertyFormData = PropertyInput & { id: number };
 export type PropertyTypeOption = { id: string; label: string };
@@ -130,6 +131,19 @@ export default function PropertyForm({ initialData, propertyTypes = [] }: { init
         <label className="admin-field">Plan de pagos (una por línea)<textarea rows={5} value={form.payment.join("\n")} onChange={e => field("payment", e.target.value.split("\n").map(item => item.trim()).filter(Boolean))} placeholder={"30% de cuota inicial\nPagos contra avance de obra"}/></label>
         <fieldset className="admin-field admin-cms-span-2"><legend>Categorías de búsqueda</legend><div className="admin-cms-category-options">{categoryOptions.map(category => <label key={category.id}><input type="checkbox" checked={form.categories.includes(category.id)} onChange={e => field("categories", e.target.checked ? [...form.categories, category.id] : form.categories.filter(item => item !== category.id))}/>{category.label}</label>)}</div><label className="admin-cms-featured"><input type="checkbox" checked={form.featured} onChange={e => field("featured", e.target.checked)}/> Destacar este inmueble en la portada</label></fieldset>
       </div></section>
+      <section className="admin-cms-form-section">
+        <h2>Ubicación e inteligencia territorial</h2>
+        <OsmEnrichmentButton
+          lat={form.lat}
+          lng={form.lng}
+          onAddressResolved={address => setForm(current => ({
+            ...current,
+            location_text: address.display_name || current.location_text,
+            municipality: address.municipality || current.municipality,
+            department: address.department || current.department,
+          }))}
+        />
+      </section>
       <section className="admin-cms-media-editor"><div className="admin-cms-media-heading"><div><h2>Fotos y videos</h2><p>Sube archivos o pega enlaces públicos de Drive y otros sitios.</p></div><label className="button button-outline admin-cms-upload-button"><Upload size={15}/>{isUploading ? "Subiendo archivos…" : "Subir archivos"}<input type="file" accept="image/*,video/mp4,video/webm,video/quicktime" multiple disabled={isUploading || isSubmitting} onChange={uploadFiles}/></label></div>
         {isUploading && <div className="admin-cms-upload-progress"><LoaderCircle size={15}/> Cargando los archivos seleccionados…</div>}
         <div className="admin-cms-remote-media"><select value={remoteKind} onChange={e => setRemoteKind(e.target.value as "image" | "video")} aria-label="Tipo de enlace"><option value="image">Foto</option><option value="video">Video</option></select><input type="url" value={remoteUrl} onChange={e => setRemoteUrl(e.target.value)} placeholder="https://drive.google.com/file/d/…" aria-label="Enlace de foto o video"/><button type="button" className="button button-outline" onClick={addRemoteMedia} disabled={!remoteUrl.trim()}><Link2 size={15}/> Agregar enlace</button></div>
