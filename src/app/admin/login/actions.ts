@@ -6,23 +6,31 @@ export async function signInAdmin(identifier: string, password: string) {
   const username = process.env.ADMIN_USERNAME?.trim().toLocaleLowerCase("es");
   const adminEmail = process.env.ADMIN_LOGIN_EMAIL?.trim().toLocaleLowerCase("es");
   const normalizedIdentifier = identifier.trim().toLocaleLowerCase("es");
+  // Any email can authenticate here; admin_users remains the authoritative
+  // allow-list after Supabase Auth verifies the password. The configured
+  // username is only a backwards-compatible alias for the primary admin.
+  const loginEmail = normalizedIdentifier.includes("@")
+    ? normalizedIdentifier
+    : username && normalizedIdentifier === username
+      ? adminEmail
+      : undefined;
 
-  if (!username || !adminEmail) {
-    return { success: false, message: "Falta configurar el usuario administrador en el entorno del sitio." };
+  if (!loginEmail) {
+    return { success: false, message: "Ingresa el correo de una cuenta administradora autorizada." };
   }
-  if (!password || (normalizedIdentifier !== username && normalizedIdentifier !== adminEmail)) {
+  if (!password) {
     return { success: false, message: "Usuario o contraseña incorrectos." };
   }
 
   try {
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email: adminEmail, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     if (error || !data.user) {
       if (error?.code === "email_not_confirmed") {
         return { success: false, message: "La cuenta de Supabase todavía no está confirmada. Confírmala desde Auth antes de ingresar." };
       }
       if (error?.code === "invalid_credentials") {
-        return { success: false, message: "Supabase Auth rechazó los datos. Usa la contraseña vigente de la cuenta asociada al correo administrador; el nombre de usuario solo sirve como alias." };
+        return { success: false, message: "Supabase Auth rechazó el correo o la contraseña. Usa las credenciales vigentes de esa cuenta." };
       }
       return { success: false, message: "No se pudo autenticar con Supabase. Revisa la conexión del proyecto y vuelve a intentarlo." };
     }
