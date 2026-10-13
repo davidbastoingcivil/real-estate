@@ -5,3 +5,4 @@ out
 *.tsbuildinfo
 .env*.local
 .npm-cache/
+.rea-npm-cache/
