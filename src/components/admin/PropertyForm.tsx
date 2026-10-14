@@ -15,6 +15,7 @@ export type PropertyTypeOption = { id: string; label: string };
 const empty: Omit<PropertyFormData, "id"> = {
   title: "", description: "", price: 0, type: "Casa", area_sqm: 0,
   bedrooms: 0, bathrooms: 0, location_text: "", status: "Disponible", lat: 4.1472, lng: -74.7201,
+  cadastral_id: "",
   municipality: "", department: "", features: [], categories: ["Buy"], payment: [], featured: false, images: [],
 };
 
@@ -124,6 +125,7 @@ export default function PropertyForm({ initialData, propertyTypes = [] }: { init
         <label className="admin-field admin-cms-span-2">Ubicación<input required value={form.location_text} onChange={e => field("location_text", e.target.value)} placeholder="Municipio, departamento"/></label>
         <label className="admin-field">Municipio<input value={form.municipality} onChange={e => field("municipality", e.target.value)} placeholder="Carmen de Apicalá"/></label>
         <label className="admin-field">Departamento / zona<input value={form.department} onChange={e => field("department", e.target.value)} placeholder="Tolima"/></label>
+        <label className="admin-field admin-cms-span-2">Cédula catastral / número predial<input maxLength={50} value={form.cadastral_id} onChange={e => field("cadastral_id", e.target.value)} placeholder="Número predial nacional (30 dígitos), CHIP u otro identificador"/><small>Se usará primero para consultar IGAC; si no es compatible o no hay resultado, se intentará con las coordenadas.</small></label>
         <label className="admin-field">Latitud<input type="number" step="any" value={form.lat} onChange={e => field("lat", Number(e.target.value))}/></label>
         <label className="admin-field">Longitud<input type="number" step="any" value={form.lng} onChange={e => field("lng", Number(e.target.value))}/></label>
         <label className="admin-field admin-cms-span-2">Descripción<textarea rows={5} value={form.description} onChange={e => field("description", e.target.value)}/></label>

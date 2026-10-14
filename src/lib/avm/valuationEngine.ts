@@ -19,7 +19,7 @@ export type AvmProperty = {
 };
 
 export type AvmComparable = {
-  id: number;
+  id: string | number;
   title: string;
   price: number;
   area_m2: number;
@@ -33,6 +33,10 @@ export type AvmComparable = {
   area_factor: number;
   adjusted_price_per_m2: number;
   adjusted_estimated_value: number;
+  source_kind: "properties" | "market_comparables";
+  source_portal: string | null;
+  source_url: string | null;
+  location_precision: "stored" | "geocoded";
 };
 
 export type AvmResult = {
@@ -108,13 +112,11 @@ function calculateGeoAiAdjustment(geo: GeoRow | null) {
 }
 
 function confidenceScore(values: number[]) {
-  if (values.length < 2) return Math.round(values.length * 8);
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
-  const coefficientOfVariation = mean > 0 ? Math.sqrt(variance) / mean : 1;
-  const sampleFactor = Math.min(1, values.length / 8);
-  const dispersionFactor = Math.max(0.2, 1 - Math.min(coefficientOfVariation, 0.8));
-  return Math.round(100 * sampleFactor * dispersionFactor);
+  const count = values.length;
+  // Bandas por tamaño de muestra; es un indicador heurístico, no una probabilidad calibrada.
+  if (count <= 2) return count === 0 ? 0 : count === 1 ? 20 : 39;
+  if (count <= 5) return Math.round(40 + ((count - 3) / 2) * 35);
+  return Math.min(99, 86 + (count - 6) * 1.5);
 }
 
 export function calculateValuation(
@@ -186,7 +188,7 @@ export function calculateValuation(
       max_distance_meters: MAX_DISTANCE_METERS,
       comparable_count: comparables.length,
       dispersion_percent: dispersionPercent,
-      description: "Promedio ponderado por similitud y distancia de ofertas publicadas, ajustado por negociación, escala de área y señales GeoAI disponibles.",
+      description: "Matriz conjunta por tipología, área y distancia, con ajustes de negociación y escala; integra inventario y oferta externa conservando el origen del dato, junto con señales GeoAI disponibles.",
     },
     limitations: [
       "Estimación automática orientativa; no es un avalúo comercial certificado ni reemplaza una inspección física.",
@@ -239,14 +241,12 @@ export async function calculatePropertyValuation(client: SupabaseClient, propert
     && property.lat >= -90 && property.lat <= 90 && property.lng >= -180 && property.lng <= 180
     && !(property.lat === 0 && property.lng === 0);
   const [comparablesResult, authResult] = await Promise.all([
-    hasCoordinates ? client.rpc("get_avm_comparables", {
+    hasCoordinates ? client.rpc("get_unified_comparables", {
       target_lat: property.lat,
       target_lng: property.lng,
-      target_type: property.type,
-      target_area: property.area,
-      max_distance_meters: MAX_DISTANCE_METERS,
-      limit_count: 10,
-      target_property_id: property.id,
+      radius: MAX_DISTANCE_METERS,
+      p_type: property.type,
+      p_area: property.area,
     }) : Promise.resolve({ data: [], error: null }),
     client.auth.getUser(),
   ]);
@@ -265,7 +265,7 @@ export async function calculatePropertyValuation(client: SupabaseClient, propert
   }
 
   const comparableRows = (comparablesResult.data || []).map((comparable: Record<string, unknown>) => ({
-    id: Number(comparable.id),
+    id: String(comparable.id),
     title: String(comparable.title),
     price: Number(comparable.price),
     area_m2: Number(comparable.area_m2),
@@ -275,7 +275,11 @@ export async function calculatePropertyValuation(client: SupabaseClient, propert
     rooms: Number(comparable.rooms || 0),
     bathrooms: Number(comparable.bathrooms || 0),
     similarity_score: Number(comparable.similarity_score),
-  }));
+    source_kind: comparable.source_kind === "market_comparables" ? "market_comparables" as const : "properties" as const,
+    source_portal: typeof comparable.source_portal === "string" ? comparable.source_portal : null,
+    source_url: typeof comparable.source_url === "string" ? comparable.source_url : null,
+    location_precision: comparable.location_precision === "geocoded" ? "geocoded" as const : "stored" as const,
+  })).filter((comparable: ComparableRow) => comparable.source_kind !== "properties" || comparable.id !== String(property.id));
   return calculateValuation(property, comparableRows, geoRow);
 }
 

@@ -8,7 +8,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
   if (!Number.isSafeInteger(id) || id < 1) notFound();
   const supabase = await createSupabaseServerClient();
   const [{ data, error }, { data: propertyTypes }] = await Promise.all([
-    supabase.from("properties").select('id,title,description,price,type,area,bedrooms,bathrooms,location,status,is_published,lat,lng,images,municipality,"ubicación",features,categories,payment,featured')
+    supabase.from("properties").select('id,title,description,price,type,area,bedrooms,bathrooms,location,status,is_published,lat,lng,cadastral_id,images,municipality,"ubicación",features,categories,payment,featured')
       .eq("id", id).maybeSingle(),
     supabase.from("property_types").select("id,label").order("sort_order"),
   ]);
@@ -28,6 +28,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     status,
     lat: Number(data.lat || 0),
     lng: Number(data.lng || 0),
+    cadastral_id: data.cadastral_id || "",
     images: (data.images || []) as string[],
     municipality: data.municipality || "",
     department: data["ubicación"] || "",

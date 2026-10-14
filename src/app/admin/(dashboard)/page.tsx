@@ -3,6 +3,7 @@ import { ArrowUpRight, Building2, Film, MapPin, Plus } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import DriveImage from "@/components/DriveImage";
 import PropertyRowActions from "./PropertyRowActions";
+import MarketDataSync from "@/components/admin/MarketDataSync";
 
 type PropertyRow = {
   id: number;
@@ -35,6 +36,7 @@ export default async function AdminDashboardPage() {
     </div>
     {error && <div className="admin-error" role="alert">No se pudo cargar el catálogo: {error.message}</div>}
     <div className="admin-cms-summary"><Building2 size={19}/><b>{properties.length}</b><span>{properties.length === 1 ? "inmueble registrado" : "inmuebles registrados"}</span></div>
+    <MarketDataSync />
     {properties.length ? <div className="admin-cms-list">
       {properties.map(property => {
         const status = !property.is_published ? "Oculto" : property.status.toLocaleLowerCase("es").includes("vendido") ? "Vendido" : "Disponible";

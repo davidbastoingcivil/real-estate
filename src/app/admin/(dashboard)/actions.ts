@@ -15,6 +15,7 @@ export type PropertyInput = {
   status: "Disponible" | "En arriendo" | "Vendido" | "Oculto";
   lat: number;
   lng: number;
+  cadastral_id: string;
   municipality: string;
   department: string;
   features: string[];
@@ -52,6 +53,9 @@ function validate(data: PropertyInput) {
   if (data.lat < -90 || data.lat > 90 || data.lng < -180 || data.lng > 180) {
     throw new Error("La latitud debe estar entre -90 y 90 y la longitud entre -180 y 180.");
   }
+  if (data.cadastral_id.length > 50 || /[^a-zA-Z0-9 .-]/.test(data.cadastral_id)) {
+    throw new Error("La cédula catastral debe tener máximo 50 caracteres alfanuméricos, puntos o guiones.");
+  }
   if (data.bedrooms < 0 || data.bathrooms < 0 || !Number.isInteger(data.bedrooms) || !Number.isInteger(data.bathrooms)) {
     throw new Error("Habitaciones y baños deben ser números enteros iguales o mayores que cero.");
   }
@@ -74,6 +78,7 @@ function dbValues(data: PropertyInput) {
     is_published: data.status !== "Oculto",
     lat: data.lat,
     lng: data.lng,
+    cadastral_id: data.cadastral_id.trim() || null,
     images: data.images.filter(url => typeof url === "string" && /^https:\/\//i.test(url)),
     features: data.features.map(item => item.trim()).filter(Boolean),
     categories: data.categories,

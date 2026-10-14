@@ -1,0 +1,282 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CadastralProperty, CadastralReportData } from "@/lib/pdf/types";
+
+type JsonRecord = Record<string, unknown>;
+type PoiCell = CadastralReportData["geoSpatialContext"]["poiCells"][number];
+
+const numberOrNull = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const asObject = (value: unknown): JsonRecord | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
+
+function firstResult(payload: JsonRecord) {
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  return asObject(results[0]);
+}
+
+async function cromaPost(path: string, body: JsonRecord): Promise<JsonRecord> {
+  const key = process.env.CROMA_API_KEY?.trim();
+  if (!key) throw new Error("Croma no está configurado.");
+  const response = await fetch(`https://api.croma.run${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!response.ok) throw new Error(`Croma respondió ${response.status}.`);
+  const payload = await response.json() as JsonRecord;
+  // Croma envelopes successful API responses inside `data`; normalize once so
+  // the report can read the documented `found`, `property` and `results` fields.
+  return asObject(payload.data) ?? payload;
+}
+
+async function lookupCadastral(property: CadastralProperty) {
+  const cadastralId = (property.cadastral_id || "").trim();
+  const normalized = cadastralId.replace(/[^\d]/g, "");
+  let identifierMiss: JsonRecord | null = null;
+  if (normalized.length === 30) {
+    try {
+      const byNumber = await cromaPost("/co/igac/property/v1", { cadastral_number: normalized });
+      if (byNumber.found === true && asObject(byNumber.property)) return { payload: byNumber, method: "cadastral_id" as const };
+      if (byNumber.found === false) identifierMiss = byNumber;
+    } catch {
+      // Una consulta por identificador no debe impedir el fallback a coordenadas.
+    }
+  }
+
+  const lat = Number(property.lat);
+  const lng = Number(property.lng);
+  const validCoordinates = Number.isFinite(lat) && lat >= -90 && lat <= 90
+    && Number.isFinite(lng) && lng >= -180 && lng <= 180 && !(lat === 0 && lng === 0);
+  if (validCoordinates) {
+    try {
+      const byPoint = await cromaPost("/co/igac/property-by-point/v1", { latitude: lat, longitude: lng });
+      return { payload: byPoint, method: "coordinates" as const };
+    } catch {
+      return { payload: identifierMiss, method: identifierMiss ? "cadastral_id" as const : "none" as const };
+    }
+  }
+  return { payload: identifierMiss, method: identifierMiss ? "cadastral_id" as const : cadastralId ? "cadastral_id" as const : "none" as const };
+}
+
+function encodePolyline(points: Array<[number, number]>) {
+  let previousLat = 0;
+  let previousLng = 0;
+  let result = "";
+  const encode = (value: number) => {
+    let current = value < 0 ? ~(value << 1) : value << 1;
+    let chunk = "";
+    while (current >= 0x20) {
+      chunk += String.fromCharCode((0x20 | (current & 0x1f)) + 63);
+      current >>= 5;
+    }
+    return chunk + String.fromCharCode(current + 63);
+  };
+  for (const [lng, lat] of points) {
+    const scaledLat = Math.round(lat * 1e5);
+    const scaledLng = Math.round(lng * 1e5);
+    result += encode(scaledLat - previousLat) + encode(scaledLng - previousLng);
+    previousLat = scaledLat;
+    previousLng = scaledLng;
+  }
+  return result;
+}
+
+async function buildStaticMap(property: CadastralProperty, cells: PoiCell[]) {
+  const token = process.env.MAPBOX_ACCESS_TOKEN?.trim();
+  if (!token) return null;
+  const lat = Number(property.lat);
+  const lng = Number(property.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
+
+  const circle = Array.from({ length: 49 }, (_, index) => {
+    const angle = index / 48 * Math.PI * 2;
+    const dLat = 500 / 111_320;
+    const dLng = 500 / (111_320 * Math.max(Math.abs(Math.cos(lat * Math.PI / 180)), 0.1));
+    return [lng + dLng * Math.cos(angle), lat + dLat * Math.sin(angle)] as [number, number];
+  });
+  const radiusOverlay = `path-3+d4af37-0.9+10251d-0.15(${encodePolyline(circle)})`;
+  const overlays = [
+    radiusOverlay,
+    ...cells.slice(0, 12).map(cell => `pin-s+3b82f6(${cell.lng},${cell.lat})`),
+    `pin-l+d4af37(${lng},${lat})`,
+  ].join(",");
+  const url = `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/${overlays}/auto/900x520@2x?access_token=${encodeURIComponent(token)}`;
+  try {
+    const response = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5000) });
+    const contentType = response.headers.get("content-type") || "";
+    const length = Number(response.headers.get("content-length") || 0);
+    if (!response.ok || !/^image\/(png|jpeg)$/i.test(contentType) || length > 4_000_000) return null;
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > 4_000_000) return null;
+    return `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function getGovernmentReportData(property: CadastralProperty, supabase: SupabaseClient) {
+  const warnings: string[] = [];
+  const coordinatesValid = Number.isFinite(property.lat) && property.lat >= -90 && property.lat <= 90
+    && Number.isFinite(property.lng) && property.lng >= -180 && property.lng <= 180
+    && !(property.lat === 0 && property.lng === 0);
+  const cadastralLookup = await lookupCadastral(property);
+  const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
+  const municipalityCode = typeof officialProperty?.municipality_code === "string" ? officialProperty.municipality_code : null;
+  const municipality = typeof officialProperty?.municipality === "string" ? officialProperty.municipality : property.municipality;
+
+  const [poiScoreResult, poiHeatmapResult, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
+    coordinatesValid ? supabase.rpc("get_location_intelligence_score", { lat: property.lat, lng: property.lng, radius_meters: 500 }) : Promise.resolve({ data: null, error: null }),
+    coordinatesValid ? supabase.rpc("get_location_intelligence_heatmap", { lat: property.lat, lng: property.lng, radius_meters: 500, cell_size_meters: 200 }) : Promise.resolve({ data: null, error: null }),
+    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
+    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
+    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }) : Promise.resolve(null),
+  ]);
+
+  let poiCounts = { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
+  if (poiScoreResult.status === "fulfilled" && !poiScoreResult.value.error) {
+    const score = asObject(poiScoreResult.value.data);
+    const counts = asObject(score?.poi_counts);
+    if (counts) poiCounts = {
+      transport: numberOrNull(counts.transport) || 0,
+      commercial: numberOrNull(counts.commerce) || 0,
+      health: numberOrNull(counts.health) || 0,
+      education: numberOrNull(counts.education) || 0,
+      parks: numberOrNull(counts.recreation) || 0,
+    };
+  }
+
+  let poiCells: PoiCell[] = [];
+  if (poiHeatmapResult.status === "fulfilled" && !poiHeatmapResult.value.error) {
+    const heatmap = asObject(poiHeatmapResult.value.data);
+    const features = Array.isArray(heatmap?.features) ? heatmap.features : [];
+    poiCells = features.flatMap(feature => {
+      const row = asObject(feature);
+      const geometry = asObject(row?.geometry);
+      const props = asObject(row?.properties);
+      const coords = Array.isArray(geometry?.coordinates) ? geometry.coordinates : [];
+      const lng = numberOrNull(coords[0]);
+      const lat = numberOrNull(coords[1]);
+      const count = numberOrNull(props?.poi_count);
+      return lat !== null && lng !== null && count !== null ? [{ lat, lng, count }] : [];
+    }).slice(0, 30);
+  }
+
+  const census = censusResult.status === "fulfilled" ? censusResult.value : null;
+  const censusRow = census ? firstResult(census) : null;
+  const population = asObject(censusRow?.population);
+  const households = asObject(censusRow?.households);
+  const dwellings = asObject(censusRow?.dwellings);
+  const stratum = asObject(censusRow?.estrato);
+  const ipm = ipmResult.status === "fulfilled" ? firstResult(ipmResult.value || {}) : null;
+  const statsPayload = municipalStatsResult.status === "fulfilled" ? municipalStatsResult.value : null;
+  const municipalStats = statsPayload ? firstResult(statsPayload) : null;
+  const distribution = stratum ? Object.fromEntries(Object.entries(stratum).flatMap(([key, value]) => {
+    const count = numberOrNull(value);
+    return count === null ? [] : [[key, count]];
+  })) : null;
+
+  if (!cadastralLookup.payload) warnings.push("No fue posible consultar los registros catastrales del IGAC en este momento.");
+  else if (cadastralLookup.payload.found === false) warnings.push("No se encontraron registros públicos para esta cédula catastral o ubicación.");
+  if (censusResult.status === "rejected" || ipmResult.status === "rejected") warnings.push("No se pudieron consultar algunos indicadores territoriales del DANE.");
+  if (municipalStatsResult.status === "rejected") warnings.push("No fue posible obtener las estadísticas municipales catastrales del IGAC.");
+  if (municipalityCode && (!census || !ipm)) warnings.push("Los indicadores municipales DANE no están disponibles para este código territorial.");
+  if (coordinatesValid && poiScoreResult.status === "fulfilled" && poiScoreResult.value.error) warnings.push("No fue posible consultar el conteo de puntos de interés local.");
+  if (!coordinatesValid) warnings.push("Este inmueble no tiene coordenadas válidas para mostrar el mapa ni consultar puntos de interés.");
+  if (property.cadastral_id && !/^\d{30}$/.test(property.cadastral_id.replace(/[^\d]/g, ""))) {
+    warnings.push("El identificador ingresado no tiene el formato nacional de 30 dígitos admitido por la consulta predial IGAC; se usaron coordenadas como alternativa.");
+  }
+
+  const found = typeof cadastralLookup.payload?.found === "boolean" ? cadastralLookup.payload.found : null;
+  const mapBase64 = await buildStaticMap(property, poiCells);
+  const cadastralNumber = typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number : null;
+  const data: CadastralReportData = {
+    metadata: {
+      reportId: `DB-${property.id}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+      issueDate: new Date().toISOString(),
+      requestedBy: "Usuario de la plataforma",
+      evaluator: "David Basto Real Estate · Informe automatizado de consulta pública",
+    },
+    subjectProperty: {
+      id: property.id,
+      title: property.title,
+      address: property.location,
+      listedAreaM2: property.area,
+      coordinates: coordinatesValid ? { lat: property.lat, lng: property.lng } : null,
+      legal: { cadastralId: property.cadastral_id || cadastralNumber || "No registrado", realEstateId: "No registrado" },
+      mainImageBase64: null,
+      staticMapBase64: mapBase64,
+    },
+    officialData: {
+      recordFound: found,
+      lookupMethod: cadastralLookup.method,
+      cadastralNumber,
+      cadastralAppraisal: numberOrNull(officialProperty?.appraisal),
+      officialBuiltArea: numberOrNull(officialProperty?.built_area_m2),
+      officialLotArea: numberOrNull(officialProperty?.land_area_m2),
+      economicDestination: typeof officialProperty?.economic_destination === "string" ? officialProperty.economic_destination : null,
+      stratum: "Sin dato",
+      municipality,
+      municipalityCode,
+      checkedAt: typeof cadastralLookup.payload?.checked_at === "string" ? cadastralLookup.payload.checked_at : null,
+      servedFrom: typeof cadastralLookup.payload?.served_from === "string" ? cadastralLookup.payload.served_from : null,
+      municipalStatistics: municipalStats ? {
+        year: numberOrNull(municipalStats.year),
+        appraisalTotal: numberOrNull(municipalStats.appraisal_total),
+        propertyCount: numberOrNull(municipalStats.property_count),
+      } : null,
+    },
+    geoSpatialContext: {
+      // The current Croma/IGAC point lookup does not provide a point-specific municipal POT certificate.
+      potNormative: {
+        landUse: "Sin dato normativo POT verificado",
+        maxHeight: "Sin dato normativo POT verificado",
+        treatment: "Sin dato normativo POT verificado",
+      },
+      poiCounts,
+      poiCells,
+      dane: {
+        asOf: typeof census?.as_of === "string" ? census.as_of : null,
+        censusYear: numberOrNull(censusRow?.year),
+        population: numberOrNull(population?.total),
+        households: numberOrNull(households?.total),
+        dwellings: numberOrNull(dwellings?.total),
+        municipalStratumDistribution: distribution,
+        ipm: numberOrNull(ipm?.ipm),
+      },
+    },
+    warnings,
+  };
+  return data;
+}
+
+export async function addReportImage(data: CadastralReportData, images: string[]) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl) return data;
+  let allowedHost: string;
+  try { allowedHost = new URL(supabaseUrl).host; } catch { return data; }
+  const imageUrl = images.find(value => !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(value));
+  if (!imageUrl) return data;
+  try {
+    const parsed = new URL(imageUrl);
+    const isSupabaseImage = parsed.protocol === "https:" && parsed.host === allowedHost
+      && parsed.pathname.startsWith("/storage/v1/object/public/property-images/");
+    const isUnsplashImage = parsed.protocol === "https:" && parsed.host === "images.unsplash.com";
+    if (!isSupabaseImage && !isUnsplashImage) return data;
+    const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(2500), cache: "no-store" });
+    const contentType = response.headers.get("content-type") || "";
+    const length = Number(response.headers.get("content-length") || 0);
+    if (!response.ok || !/^image\/(jpeg|png)$/i.test(contentType) || length > 5_000_000) return data;
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > 5_000_000) return data;
+    data.subjectProperty.mainImageBase64 = Buffer.from(bytes);
+  } catch {
+    // La falta de una imagen no debe bloquear el reporte.
+  }
+  return data;
+}
