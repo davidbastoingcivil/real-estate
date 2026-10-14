@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Circle, CircleMarker, GeoJSON, MapContainer, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { vectorBasemapLayer } from "esri-leaflet-vector/src/EsriLeafletVector.js";
 import type { Feature, Geometry } from "geojson";
 import Link from "next/link";
 import { Activity, Layers3, LoaderCircle, MapPin, Route } from "lucide-react";
@@ -21,77 +20,38 @@ type ApiResponse = GeoAiAnalysis & {
 const located = (property: Property) => Number.isFinite(property.lat) && Number.isFinite(property.lng) && (property.lat !== 0 || property.lng !== 0);
 const geoColor = (score: number | null) => score === null ? "#8d968d" : score >= 70 ? "#d1b36e" : score >= 40 ? "#8faf91" : "#a57b68";
 
-type ArcGISLayer = L.Layer & { getMaplibreMap?: () => { on: (event: "load" | "error", callback: (event: { error?: { status?: number } }) => void) => void; off: (event: "load" | "error", callback: (event: { error?: { status?: number } }) => void) => void; isStyleLoaded: () => boolean } };
-
 function GeoAiBasemap() {
   const map = useMap();
   useEffect(() => {
     let disposed = false;
-    let layer: ArcGISLayer | null = null;
+    let primary: L.TileLayer | null = null;
     let fallback: L.TileLayer | null = null;
     let tileErrors = 0;
+    let primaryLoaded = false;
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let glMap: ReturnType<NonNullable<ArcGISLayer["getMaplibreMap"]>> | undefined;
-    let onLoad: ((event: { error?: { status?: number } }) => void) | undefined;
-    let onError: ((event: { error?: { status?: number } }) => void) | undefined;
     const addOpenStreetMapFallback = () => {
-      if (disposed) return;
-      if (fallback) map.removeLayer(fallback);
+      if (disposed || fallback) return;
       fallback = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(map);
     };
-    const addFallback = () => {
-      if (disposed || fallback) return;
-      fallback = L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        maxZoom: 20,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      }).addTo(map);
-      fallback.on("tileerror", () => {
-        tileErrors += 1;
-        if (tileErrors >= 3) addOpenStreetMapFallback();
-      });
-      fallbackTimer = setTimeout(() => {
-        if (!disposed && fallback && !fallback.isLoading()) addOpenStreetMapFallback();
-      }, 6500);
-    };
-    const apiKey = process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim();
-    if (!apiKey) {
-      addFallback();
-      return () => { disposed = true; if (fallbackTimer) clearTimeout(fallbackTimer); if (fallback) map.removeLayer(fallback); };
-    }
-    try {
-      layer = vectorBasemapLayer("arcgis/dark-gray", { apikey: apiKey, version: 2, language: "es" }) as ArcGISLayer;
-      layer.addTo(map);
-      glMap = layer.getMaplibreMap?.();
-      onLoad = () => { if (timer) clearTimeout(timer); };
-      onError = () => {
-        if (timer) clearTimeout(timer);
-        if (layer) map.removeLayer(layer);
-        layer = null;
-        addFallback();
-      };
-      glMap?.on("load", onLoad);
-      glMap?.on("error", onError);
-      timer = setTimeout(() => {
-        if (!disposed && !glMap?.isStyleLoaded()) {
-          if (layer) map.removeLayer(layer);
-          layer = null;
-          addFallback();
-        }
-      }, 9000);
-    } catch {
-      addFallback();
-    }
+    primary = L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      maxZoom: 20,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    }).addTo(map);
+    primary.on("load", () => { primaryLoaded = true; });
+    primary.on("tileerror", () => {
+      tileErrors += 1;
+      if (tileErrors >= 3) addOpenStreetMapFallback();
+    });
+    fallbackTimer = setTimeout(() => {
+      if (!disposed && !primaryLoaded) addOpenStreetMapFallback();
+    }, 7000);
     return () => {
       disposed = true;
-      if (timer) clearTimeout(timer);
       if (fallbackTimer) clearTimeout(fallbackTimer);
-      if (glMap && onLoad) glMap.off("load", onLoad);
-      if (glMap && onError) glMap.off("error", onError);
-      if (layer) map.removeLayer(layer);
+      if (primary) map.removeLayer(primary);
       if (fallback) map.removeLayer(fallback);
     };
   }, [map]);
