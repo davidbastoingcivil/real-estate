@@ -25,7 +25,7 @@ export default function SearchPage() {
       <h1>Encuentra tu <em>lugar.</em></h1>
       <p>Busca entre proyectos y hogares seleccionados para ti.</p>
     </div>
-    <div className="search-layout">
+    <div className={`search-layout${view === "geoai" ? " search-layout-geoai" : ""}`}>
       <SearchFilters/>
       <section className="results-panel">
         <div className="results-toolbar">

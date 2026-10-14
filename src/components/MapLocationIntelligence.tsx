@@ -28,21 +28,38 @@ function GeoAiBasemap() {
     let disposed = false;
     let layer: ArcGISLayer | null = null;
     let fallback: L.TileLayer | null = null;
+    let tileErrors = 0;
+    let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let glMap: ReturnType<NonNullable<ArcGISLayer["getMaplibreMap"]>> | undefined;
     let onLoad: ((event: { error?: { status?: number } }) => void) | undefined;
     let onError: ((event: { error?: { status?: number } }) => void) | undefined;
+    const addOpenStreetMapFallback = () => {
+      if (disposed) return;
+      if (fallback) map.removeLayer(fallback);
+      fallback = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+    };
     const addFallback = () => {
       if (disposed || fallback) return;
       fallback = L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
         maxZoom: 20,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
       }).addTo(map);
+      fallback.on("tileerror", () => {
+        tileErrors += 1;
+        if (tileErrors >= 3) addOpenStreetMapFallback();
+      });
+      fallbackTimer = setTimeout(() => {
+        if (!disposed && fallback && !fallback.isLoading()) addOpenStreetMapFallback();
+      }, 6500);
     };
     const apiKey = process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim();
     if (!apiKey) {
       addFallback();
-      return () => { disposed = true; if (fallback) map.removeLayer(fallback); };
+      return () => { disposed = true; if (fallbackTimer) clearTimeout(fallbackTimer); if (fallback) map.removeLayer(fallback); };
     }
     try {
       layer = vectorBasemapLayer("arcgis/dark-gray", { apikey: apiKey, version: 2, language: "es" }) as ArcGISLayer;
@@ -70,11 +87,25 @@ function GeoAiBasemap() {
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
+      if (fallbackTimer) clearTimeout(fallbackTimer);
       if (glMap && onLoad) glMap.off("load", onLoad);
       if (glMap && onError) glMap.off("error", onError);
       if (layer) map.removeLayer(layer);
       if (fallback) map.removeLayer(fallback);
     };
+  }, [map]);
+  return null;
+}
+
+function InvalidateMapSize() {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    const resize = () => map.invalidateSize({ pan: false, debounceMoveend: true });
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    const frame = requestAnimationFrame(resize);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [map]);
   return null;
 }
@@ -86,7 +117,7 @@ function FocusLocation({ position }: { position: [number, number] | null }) {
 }
 
 function formatScore(value: number | null) {
-  return value === null ? "Pendiente" : `${(value / 10).toFixed(1)} / 10`;
+  return value === null ? "Sin datos" : `${(value / 10).toFixed(1)} / 10`;
 }
 
 export default function MapLocationIntelligence({ properties: propertySource }: { properties?: Property[] }) {
@@ -134,6 +165,7 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
 
   return <section className="geoai-map-shell" aria-label="Mapa de inteligencia territorial">
     <MapContainer center={position ?? [4.15, -74.72]} zoom={position ? 13 : 7} scrollWheelZoom className="geoai-leaflet-map">
+      <InvalidateMapSize/>
       <GeoAiBasemap/>
       <FocusLocation position={position}/>
       {mode === "geoai" && polygon && <GeoJSON key={`${selectedId}-${minutes}-${travelMode}`} data={polygon} pathOptions={{ color: "#d1b36e", weight: 2, fillColor: "#d1b36e", fillOpacity: 0.13, dashArray: "6 5" }}/ >}
@@ -171,14 +203,15 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
     {mode === "geoai" && <aside className="geoai-score-card" aria-live="polite">
       <div className="geoai-score-heading"><div><span>INTELIGENCIA TERRITORIAL</span><b>{selected?.name ?? "Selecciona un inmueble"}</b></div>{loading && <LoaderCircle size={17} className="spin" aria-label="Actualizando análisis"/>}</div>
       {error ? <p className="geoai-error">{error}</p> : <>
-        <div className="geoai-opportunity"><span>Oportunidad espacial</span><strong>{formatScore(intelligence?.opportunity_score ?? null)}</strong></div>
+        <div className="geoai-opportunity"><span>Oportunidad espacial</span><strong>{loading ? "Calculando…" : formatScore(intelligence?.opportunity_score ?? null)}</strong></div>
         <div className="geoai-metric-grid">
-          <div><span>Accesibilidad</span><b>{formatScore(intelligence?.accessibility_score ?? null)}</b></div>
-          <div><span>Comercio</span><b>{formatScore(intelligence?.commercial_density_score ?? null)}</b></div>
-          <div><span>Infraestructura</span><b>{formatScore(intelligence?.infrastructure_growth_score ?? null)}</b></div>
-          <div><span>Riesgos</span><b>{formatScore(intelligence?.risk_score ?? null)}</b></div>
+          <div><span>Accesibilidad</span><b>{loading ? "Calculando…" : formatScore(intelligence?.accessibility_score ?? null)}</b></div>
+          <div><span>Comercio</span><b>{loading ? "Calculando…" : formatScore(intelligence?.commercial_density_score ?? null)}</b></div>
+          <div><span>Infraestructura</span><b>{loading ? "Calculando…" : formatScore(intelligence?.infrastructure_growth_score ?? null)}</b></div>
+          <div><span>Riesgos</span><b>{loading ? "Calculando…" : formatScore(intelligence?.risk_score ?? null)}</b></div>
         </div>
         <div className="geoai-data-summary"><span>{intelligence?.total_pois ?? 0} POI en el radio</span><span>Confianza: {intelligence?.confidence ?? "no_data"}</span></div>
+        {!loading && !intelligence?.total_pois && <small className="geoai-error">Sin puntos de interés georreferenciados para calcular métricas en esta ubicación y radio.</small>}
         <small className="geoai-disclaimer">Los círculos agregan POI cargados en la base. El polígono usa velocidad promedio y no representa rutas reales.</small>
         {analysis?.warnings.map(warning => <small className="geoai-error" key={warning}>{warning}</small>)}
       </>}
