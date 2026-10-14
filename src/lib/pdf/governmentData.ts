@@ -39,8 +39,12 @@ async function cromaPost(path: string, body: JsonRecord): Promise<JsonRecord> {
 async function lookupCadastral(property: CadastralProperty) {
   const cadastralId = (property.cadastral_id || "").trim();
   const normalized = cadastralId.replace(/[^\d]/g, "");
+  // The public IGAC portal supports legacy 20-digit identifiers, but Croma's
+  // property endpoint currently validates cadastral_number as 30 digits.
+  // Keep zeroes intact and only send identifiers this API accepts.
+  const cromaCadastralNumber = /^\d{30}$/.test(normalized);
   let identifierMiss: JsonRecord | null = null;
-  if (normalized.length === 30) {
+  if (cromaCadastralNumber) {
     try {
       const byNumber = await cromaPost("/co/igac/property/v1", { cadastral_number: normalized });
       if (byNumber.found === true && asObject(byNumber.property)) return { payload: byNumber, method: "cadastral_id" as const };
@@ -200,8 +204,16 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   if (municipalityCode && (!census || !ipm)) warnings.push("Los indicadores municipales DANE no están disponibles para este código territorial.");
   if (coordinatesValid && livePois?.warning) warnings.push(livePois.warning);
   if (!coordinatesValid) warnings.push("Este inmueble no tiene coordenadas válidas para mostrar el mapa ni consultar puntos de interés.");
-  if (cadastralLookup.method === "coordinates" && property.cadastral_id && !/^\d{30}$/.test(property.cadastral_id.replace(/[^\d]/g, ""))) {
-    warnings.push("El identificador ingresado no tiene el formato nacional de 30 dígitos admitido por la consulta predial IGAC; se usaron coordenadas como alternativa.");
+  const normalizedCadastralId = (property.cadastral_id || "").replace(/[^\d]/g, "");
+  if (cadastralLookup.method === "coordinates" && property.cadastral_id && /^\d{20}$/.test(normalizedCadastralId)) {
+    warnings.push("El número predial antiguo de 20 dígitos es válido en el portal del IGAC, pero la API de Croma requiere el número predial nacional de 30 dígitos para buscar por número; se consultó por coordenadas.");
+  } else if (cadastralLookup.method === "coordinates" && property.cadastral_id && !/^\d{30}$/.test(normalizedCadastralId)) {
+    warnings.push("La API de Croma requiere el número predial nacional de 30 dígitos para buscar por número; se consultó por coordenadas como alternativa.");
+  }
+  const requestedMunicipality = (property.municipality || property.location).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const returnedMunicipality = (municipality || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (cadastralLookup.method === "coordinates" && cadastralLookup.payload?.found === true && requestedMunicipality && returnedMunicipality && !returnedMunicipality.includes(requestedMunicipality.split(",")[0].trim())) {
+    warnings.push(`La consulta por coordenadas identificó ${municipality}, pero el inmueble está registrado en ${property.municipality || property.location}. Verifica las coordenadas antes de usar este resultado en la tasación.`);
   }
 
   const found = typeof cadastralLookup.payload?.found === "boolean" ? cadastralLookup.payload.found : null;
