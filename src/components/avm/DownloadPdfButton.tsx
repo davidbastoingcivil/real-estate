@@ -21,11 +21,11 @@ export default function DownloadPdfButton({ propertyId, valuationId }: { propert
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "Estimacion-AVM-David-Basto.pdf";
+      link.download = "Informe-Predial-David-Basto.pdf";
       document.body.append(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "No se pudo descargar el informe.");
     } finally {
@@ -35,7 +35,7 @@ export default function DownloadPdfButton({ propertyId, valuationId }: { propert
 
   return <div className="avm-download-wrap">
     <button className="avm-download" type="button" onClick={download} disabled={loading}>
-      <Download size={16}/>{loading ? "Preparando informe…" : "Descargar informe PDF"}
+      <Download size={16}/>{loading ? "Consultando fuentes y generando PDF…" : "Generar informe predial PDF"}
     </button>
     {error && <p className="avm-error" role="alert">{error}</p>}
   </div>;

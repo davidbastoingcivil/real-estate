@@ -44,6 +44,7 @@ export type GeoAiAnalysis = {
     weights: { accessibility: 0.35; commercial_density: 0.3; infrastructure_growth: 0.25; risk: 0.1 };
     disclaimer: string;
   };
+  warnings: string[];
 };
 
 export type GeoAiRequest = {
@@ -55,6 +56,29 @@ export type GeoAiRequest = {
 };
 
 const weights = { accessibility: 0.35, commercial_density: 0.3, infrastructure_growth: 0.25, risk: 0.1 } as const;
+
+function fallbackIsochrone(lat: number, lng: number, minutes: number, travelMode: TravelMode): IsochroneFeature {
+  const speed = travelMode === "walking" ? 75 : 500;
+  const estimatedRadiusMeters = minutes * speed;
+  const points = Array.from({ length: 49 }, (_, index) => {
+    const angle = (index / 48) * Math.PI * 2;
+    const latitude = lat + (estimatedRadiusMeters / 111_320) * Math.sin(angle);
+    const longitude = lng + (estimatedRadiusMeters / (111_320 * Math.max(Math.abs(Math.cos(lat * Math.PI / 180)), 0.05))) * Math.cos(angle);
+    return [longitude, latitude];
+  });
+  return {
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [points] },
+    properties: {
+      requested_minutes: minutes,
+      travel_mode: travelMode,
+      estimated_radius_meters: estimatedRadiusMeters,
+      is_approximation: true,
+      method: "client_fallback_radial_buffer",
+      source_note: "Área circular estimada; no representa una ruta por red vial.",
+    },
+  };
+}
 
 export function calculateOpportunityScore(metrics: Pick<LocationIntelligence,
   "accessibility_score" | "commercial_density_score" | "infrastructure_growth_score" | "risk_score" | "total_pois"
@@ -77,7 +101,7 @@ export async function getGeoAiAnalysis(client: SupabaseClient, request: GeoAiReq
   const minutes = request.minutes ?? 10;
   const travelMode = request.travelMode ?? "walking";
 
-  const [scoreResult, bufferResult, heatmapResult] = await Promise.all([
+  const [scoreResult, bufferResult, heatmapResult] = await Promise.allSettled([
     client.rpc("get_location_intelligence_score", {
       lat: request.lat,
       lng: request.lng,
@@ -97,14 +121,20 @@ export async function getGeoAiAnalysis(client: SupabaseClient, request: GeoAiReq
     }),
   ]);
 
-  if (scoreResult.error) throw new Error(`No se pudieron consultar los indicadores espaciales: ${scoreResult.error.message}`);
-  if (bufferResult.error) throw new Error(`No se pudo calcular el área de influencia: ${bufferResult.error.message}`);
-  if (heatmapResult.error) throw new Error(`No se pudo cargar la densidad de puntos de interés: ${heatmapResult.error.message}`);
-
-  const metrics = scoreResult.data as unknown as LocationIntelligence;
-  const buffer = bufferResult.data as unknown as IsochroneFeature;
-  const heatmap = heatmapResult.data as unknown as GeoAiAnalysis["heatmap"];
-  if (!metrics || !buffer?.geometry || !heatmap?.features) throw new Error("Supabase devolvió una respuesta espacial incompleta.");
+  const warnings: string[] = [];
+  const scoreData = scoreResult.status === "fulfilled" && !scoreResult.value.error ? scoreResult.value.data : null;
+  if (!scoreData) warnings.push("Los indicadores de puntos de interés no están disponibles para esta ubicación.");
+  const metrics = (scoreData || {
+    radius_meters: radiusMeters, poi_counts: {}, total_pois: 0, accessibility_score: null,
+    commercial_density_score: null, infrastructure_growth_score: null, risk_score: null,
+    opportunity_score: null, confidence: "no_data", model_version: "fallback-v1",
+  }) as LocationIntelligence;
+  const bufferData = bufferResult.status === "fulfilled" && !bufferResult.value.error ? bufferResult.value.data : null;
+  if (!bufferData) warnings.push("El área de influencia se muestra como un radio estimado, no como una ruta real.");
+  const buffer = (bufferData || fallbackIsochrone(request.lat, request.lng, minutes, travelMode)) as IsochroneFeature;
+  const heatmapData = heatmapResult.status === "fulfilled" && !heatmapResult.value.error ? heatmapResult.value.data : null;
+  if (!heatmapData) warnings.push("La capa de densidad no pudo consultarse; el mapa base y el inmueble siguen disponibles.");
+  const heatmap = (heatmapData || { type: "FeatureCollection", features: [], radius_meters: radiusMeters, cell_size_meters: 400, method: "no_data" }) as GeoAiAnalysis["heatmap"];
 
   return {
     intelligence: { ...metrics, opportunity_score: calculateOpportunityScore(metrics) },
@@ -115,6 +145,7 @@ export async function getGeoAiAnalysis(client: SupabaseClient, request: GeoAiReq
       weights,
       disclaimer: "Indicador heurístico a partir de POI cargados y clasificados; no es una predicción de precios ni una isócrona de red vial.",
     },
+    warnings,
   };
 }
 

@@ -92,7 +92,7 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
       {data.subjectProperty.staticMapBase64
         ? <Image src={data.subjectProperty.staticMapBase64} style={styles.map}/>
         : <View style={styles.mapPlaceholder}><Text style={styles.mapPlaceholderText}>Mapa no disponible</Text></View>}
-      <Text style={styles.mapCaption}>Radio de análisis: 500 m · Punto del inmueble en dorado · Celdas de POI agregadas · © Mapbox · © OpenStreetMap.</Text>
+      <Text style={styles.mapCaption}>Radio de análisis: {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} m · Punto del inmueble en dorado · POI agregados · © Mapbox · © OpenStreetMap.</Text>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>NORMA URBANA · POT</Text>
@@ -105,7 +105,7 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
       <Text style={styles.sourceNote}>La destinación económica catastral no reemplaza la norma urbanística. No se encontró un resultado POT verificable por punto en la consulta documentada; para confirmar edificabilidad se requiere el instrumento y certificado de la autoridad municipal.</Text>
     </View>
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>PUNTOS DE INTERÉS · RADIO DE 500 M</Text>
+        <Text style={styles.sectionTitle}>PUNTOS DE INTERÉS · RADIO DE {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} M</Text>
       <View style={styles.facts}>
         <Fact label="TRANSPORTE" value={String(poiCounts.transport)}/>
         <Fact label="EDUCACIÓN" value={String(poiCounts.education)}/>
@@ -129,7 +129,7 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
         ? <Image src={property.mainImageBase64} style={styles.coverImage}/>
         : <View style={styles.coverPlaceholder}><Text style={styles.coverPlaceholderText}>FICHA PREDIAL · {property.title.toLocaleUpperCase("es-CO")}</Text></View>}
       <Text style={styles.eyebrow}>INFORMACIÓN CATASTRAL Y CONTEXTO TERRITORIAL</Text>
-      <Text style={styles.coverTitle}>INFORME PREDIAL Y DE NORMA URBANA</Text>
+      <Text style={styles.coverTitle}>INFORME DE INTELIGENCIA TERRITORIAL Y FICHA PREDIAL</Text>
       <Text style={styles.coverAddress}>{property.title}{"\n"}{property.address}</Text>
       <View style={styles.coverRule}/>
       <Text style={styles.heroTitle}>DATOS CATASTRALES DISPONIBLES</Text>
@@ -138,14 +138,15 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
         <View style={styles.heroMetric}><Text style={styles.heroLabel}>ÁREA DE TERRENO</Text><Text style={styles.heroValue}>{areaLabel(data.officialData.officialLotArea)}</Text></View>
         <View style={styles.heroMetric}><Text style={styles.heroLabel}>ÁREA CONSTRUIDA</Text><Text style={styles.heroValue}>{areaLabel(data.officialData.officialBuiltArea)}</Text></View>
       </View>
-      <Text style={styles.coverMeta}>Emitido el {dateLabel(data.metadata.issueDate)} · Informe {data.metadata.reportId}{"\n"}Consulta catastral priorizada por identificador; coordenadas como alternativa.</Text>
+      {data.metadata.isMacroLotWarning && <View style={[styles.callout, { backgroundColor: "#392a24", borderLeftColor: gold }]}><Text style={[styles.calloutText, { color: "#fff" }]}>Búsqueda por coordenadas espaciales. Los datos pueden corresponder a un predio de mayor extensión no desenglobado.</Text></View>}
+      <Text style={styles.coverMeta}>Emitido el {dateLabel(data.metadata.issueDate)} · Informe {data.metadata.reportId}{"\n"}Consulta priorizada por CHIP/identificador; coordenadas como alternativa.</Text>
       <View style={styles.coverFooter} fixed><Text>FICHA PREDIAL · FUENTES PÚBLICAS</Text><Text>{data.metadata.reportId}</Text></View>
     </Page>
 
     <Page size="A4" style={styles.page}>
       <Text style={styles.eyebrow}>01 · IDENTIFICACIÓN Y FICHA CATASTRAL</Text>
       <Text style={styles.heading}>Datos del inmueble</Text>
-      <Text style={styles.intro}>Cruce al vuelo con el registro catastral IGAC. Los datos que siguen no modifican la ficha almacenada en la plataforma.</Text>
+      <Text style={styles.intro}>Cruce al vuelo con registros catastrales y fuentes públicas. Los datos consultados no se almacenan en la plataforma.</Text>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>IDENTIFICACIÓN</Text>
         <View style={styles.facts}>
@@ -155,6 +156,17 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
           <Fact label="MATRÍCULA INMOBILIARIA" value={property.legal.realEstateId}/>
           <Fact label="COORDENADAS WGS84" value={property.coordinates ? `${property.coordinates.lat.toFixed(6)}, ${property.coordinates.lng.toFixed(6)}` : "No registradas"}/>
           <Fact label="MÉTODO DE CONSULTA" value={data.officialData.lookupMethod === "cadastral_id" ? "Número predial" : data.officialData.lookupMethod === "coordinates" ? "Coordenadas" : "Sin consulta"}/>
+        </View>
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>FICHA FÍSICA DEL INMUEBLE</Text>
+        <View style={styles.facts}>
+          <Fact label="TIPO DE INMUEBLE" value={property.type}/>
+          <Fact label="ÁREA PUBLICADA" value={areaLabel(property.listedAreaM2)}/>
+          <Fact label="HABITACIONES" value={String(property.bedrooms)}/>
+          <Fact label="BAÑOS" value={String(property.bathrooms)}/>
+          <Fact label="EDAD / CONSERVACIÓN" value="Sin dato estructurado"/>
+          <Fact label="PARQUEADEROS / DEPÓSITOS" value="Sin dato estructurado"/>
         </View>
       </View>
       <View style={styles.section}>
@@ -171,7 +183,7 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
     <Page size="A4" style={styles.page}>
       <Text style={styles.eyebrow}>02 · ANÁLISIS NORMATIVO Y ESPACIAL</Text>
       <Text style={styles.heading}>El predio y su entorno</Text>
-      <Text style={styles.intro}>Vista satelital, contexto de puntos de interés y disponibilidad de información normativa municipal.</Text>
+      <Text style={styles.intro}>Vista satelital, contexto de puntos de interés y cobertura disponible de información normativa y de riesgos.</Text>
       <NormativeAndSpatialAnalysis data={data}/>
       <Footer data={data}/>
     </Page>
@@ -179,7 +191,7 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
     <Page size="A4" style={styles.page}>
       <Text style={styles.eyebrow}>03 · CONTEXTO TERRITORIAL Y ALCANCE</Text>
       <Text style={styles.heading}>Indicadores municipales y fuentes</Text>
-      <Text style={styles.intro}>Los indicadores DANE son agregados municipales; no describen individualmente el inmueble ni determinan su estrato.</Text>
+      <Text style={styles.intro}>Informe determinístico de fuentes públicas consultadas al vuelo. Los indicadores DANE son agregados municipales; no describen individualmente el inmueble.</Text>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>PERFIL MUNICIPAL DANE</Text>
         <View style={styles.facts}>
@@ -193,6 +205,14 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
         {data.geoSpatialContext.dane.municipalStratumDistribution && <Text style={styles.sourceNote}>Distribución municipal de viviendas por estrato en el censo: {Object.entries(data.geoSpatialContext.dane.municipalStratumDistribution).map(([key, value]) => `${key.toUpperCase()}: ${value.toLocaleString("es-CO")}`).join(" · ")}. No es el estrato del predio consultado.</Text>}
         {data.officialData.municipalStatistics && <Text style={styles.sourceNote}>Estadística catastral municipal IGAC {data.officialData.municipalStatistics.year || "(año no indicado)"}: {data.officialData.municipalStatistics.propertyCount?.toLocaleString("es-CO") || "—"} predios y avalúo agregado {cop(data.officialData.municipalStatistics.appraisalTotal)}. Este total municipal no corresponde al inmueble.</Text>}
       </View>
+      <View style={styles.section} wrap={false}>
+        <Text style={styles.sectionTitle}>CAPA PREDICTIVA · COBERTURA DISPONIBLE</Text>
+        <View style={styles.facts}>
+          <Fact label="RIESGO DE REMOCIÓN EN MASA" value={data.predictiveAnalysis.physicalRisks.landslide}/>
+          <Fact label="RIESGO DE INUNDACIÓN" value={data.predictiveAnalysis.physicalRisks.flooding}/>
+          <Fact label="CATALIZADORES DE DESARROLLO" value={data.predictiveAnalysis.capitalGainCatalysts.length ? `${data.predictiveAnalysis.capitalGainCatalysts.length} identificados` : "No hay proyectos verificables en las fuentes consultadas"}/>
+        </View>
+      </View>
       {data.warnings.map((warning, index) => <Text key={`${index}-${warning}`} style={styles.bullet}>• {warning}</Text>)}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>FUENTES Y FECHA</Text>
@@ -201,7 +221,7 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
       </View>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>ASPECTOS LEGALES Y ALCANCE</Text>
-        <Text style={styles.legal}>Este documento es un resumen de inteligencia territorial basado en cruces con fuentes públicas abiertas (IGAC, DANE vía API) y análisis geoespacial. No sustituye un certificado de libertad y tradición, un avalúo comercial físico ni un concepto de norma urbana emitido por una Curaduría Urbana.</Text>
+        <Text style={styles.legal}>Documento generado al vuelo mediante cruces espaciales de fuentes públicas abiertas (IGAC, DANE, OSM y servicios disponibles). No se guardan permanentemente estos resultados en la base de datos. Las áreas físicas y la norma expuesta no sustituyen una visita pericial, un Certificado de Tradición y Libertad, ni un Concepto de Norma Urbana emitido por la Curaduría Urbana o Secretaría de Planeación respectiva.</Text>
         <Text style={styles.legal}>La disponibilidad y vigencia dependen de la cobertura del gestor catastral y de las fuentes consultadas. La geometría catastral, si la fuente la entrega, es referencial y no certifica linderos. Los datos del censo municipal corresponden al nivel agregado.</Text>
         <Text style={styles.legal}>La consulta IGAC por coordenadas puede no encontrar predios en municipios cuyo catastro es administrado por un gestor distinto del IGAC. Para decisiones jurídicas, financieras o de edificabilidad, solicita certificados vigentes a las autoridades competentes.</Text>
       </View>

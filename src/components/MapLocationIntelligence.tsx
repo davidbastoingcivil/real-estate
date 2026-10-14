@@ -49,13 +49,11 @@ function GeoAiBasemap() {
       layer.addTo(map);
       glMap = layer.getMaplibreMap?.();
       onLoad = () => { if (timer) clearTimeout(timer); };
-      onError = event => {
-        if (event.error?.status === 401 || event.error?.status === 403) {
-          if (timer) clearTimeout(timer);
-          if (layer) map.removeLayer(layer);
-          layer = null;
-          addFallback();
-        }
+      onError = () => {
+        if (timer) clearTimeout(timer);
+        if (layer) map.removeLayer(layer);
+        layer = null;
+        addFallback();
       };
       glMap?.on("load", onLoad);
       glMap?.on("error", onError);
@@ -182,6 +180,7 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
         </div>
         <div className="geoai-data-summary"><span>{intelligence?.total_pois ?? 0} POI en el radio</span><span>Confianza: {intelligence?.confidence ?? "no_data"}</span></div>
         <small className="geoai-disclaimer">Los círculos agregan POI cargados en la base. El polígono usa velocidad promedio y no representa rutas reales.</small>
+        {analysis?.warnings.map(warning => <small className="geoai-error" key={warning}>{warning}</small>)}
       </>}
     </aside>}
   </section>;

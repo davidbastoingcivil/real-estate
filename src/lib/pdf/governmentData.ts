@@ -13,6 +13,15 @@ const numberOrNull = (value: unknown): number | null => {
 const asObject = (value: unknown): JsonRecord | null =>
   value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
 
+async function safeSpatialRpc(client: SupabaseClient, name: string, args: Record<string, number>) {
+  try {
+    const { data, error } = await client.rpc(name, args);
+    return { data: data as unknown, error: error ? { message: error.message } : null };
+  } catch (error) {
+    return { data: null, error: { message: error instanceof Error ? error.message : "Spatial query failed" } };
+  }
+}
+
 function firstResult(payload: JsonRecord) {
   const results = Array.isArray(payload.results) ? payload.results : [];
   return asObject(results[0]);
@@ -102,9 +111,9 @@ async function buildStaticMap(property: CadastralProperty, cells: PoiCell[]) {
   });
   const radiusOverlay = `path-3+d4af37-0.9+10251d-0.15(${encodePolyline(circle)})`;
   const overlays = [
-    radiusOverlay,
-    ...cells.slice(0, 12).map(cell => `pin-s+3b82f6(${cell.lng},${cell.lat})`),
     `pin-l+d4af37(${lng},${lat})`,
+    ...(cells.length ? cells.slice(0, 12).map(cell => `pin-s+3b82f6(${cell.lng},${cell.lat})`) : []),
+    radiusOverlay,
   ].join(",");
   const url = `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/${overlays}/auto/900x520@2x?access_token=${encodeURIComponent(token)}`;
   try {
@@ -130,17 +139,27 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   const municipalityCode = typeof officialProperty?.municipality_code === "string" ? officialProperty.municipality_code : null;
   const municipality = typeof officialProperty?.municipality === "string" ? officialProperty.municipality : property.municipality;
 
-  const [poiScoreResult, poiHeatmapResult, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
-    coordinatesValid ? supabase.rpc("get_location_intelligence_score", { lat: property.lat, lng: property.lng, radius_meters: 500 }) : Promise.resolve({ data: null, error: null }),
-    coordinatesValid ? supabase.rpc("get_location_intelligence_heatmap", { lat: property.lat, lng: property.lng, radius_meters: 500, cell_size_meters: 200 }) : Promise.resolve({ data: null, error: null }),
+  const [initialPoiScore, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
+    coordinatesValid ? safeSpatialRpc(supabase, "get_location_intelligence_score", { lat: property.lat, lng: property.lng, radius_meters: 500 }) : Promise.resolve({ data: null, error: null }),
     municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
     municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
     municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }) : Promise.resolve(null),
   ]);
 
+  const initialScore = initialPoiScore.status === "fulfilled" && !initialPoiScore.value.error ? asObject(initialPoiScore.value.data) : null;
+  const initialCounts = asObject(initialScore?.poi_counts);
+  const hasPoisAtInitialRadius = Object.values(initialCounts || {}).some(value => (numberOrNull(value) || 0) > 0);
+  const poiSearchRadiusUsed = !coordinatesValid || hasPoisAtInitialRadius ? 500 : 2500;
+  const [poiScoreResult, poiHeatmapResult] = await Promise.all([
+    poiSearchRadiusUsed === 500 && initialPoiScore.status === "fulfilled" ? Promise.resolve(initialPoiScore.value) : coordinatesValid
+      ? safeSpatialRpc(supabase, "get_location_intelligence_score", { lat: property.lat, lng: property.lng, radius_meters: poiSearchRadiusUsed })
+      : Promise.resolve({ data: null, error: null }),
+    coordinatesValid ? safeSpatialRpc(supabase, "get_location_intelligence_heatmap", { lat: property.lat, lng: property.lng, radius_meters: poiSearchRadiusUsed, cell_size_meters: 300 }) : Promise.resolve({ data: null, error: null }),
+  ]);
+
   let poiCounts = { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
-  if (poiScoreResult.status === "fulfilled" && !poiScoreResult.value.error) {
-    const score = asObject(poiScoreResult.value.data);
+  if (!poiScoreResult.error) {
+    const score = asObject(poiScoreResult.data);
     const counts = asObject(score?.poi_counts);
     if (counts) poiCounts = {
       transport: numberOrNull(counts.transport) || 0,
@@ -152,8 +171,8 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   }
 
   let poiCells: PoiCell[] = [];
-  if (poiHeatmapResult.status === "fulfilled" && !poiHeatmapResult.value.error) {
-    const heatmap = asObject(poiHeatmapResult.value.data);
+  if (!poiHeatmapResult.error) {
+    const heatmap = asObject(poiHeatmapResult.data);
     const features = Array.isArray(heatmap?.features) ? heatmap.features : [];
     poiCells = features.flatMap(feature => {
       const row = asObject(feature);
@@ -186,9 +205,9 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   if (censusResult.status === "rejected" || ipmResult.status === "rejected") warnings.push("No se pudieron consultar algunos indicadores territoriales del DANE.");
   if (municipalStatsResult.status === "rejected") warnings.push("No fue posible obtener las estadísticas municipales catastrales del IGAC.");
   if (municipalityCode && (!census || !ipm)) warnings.push("Los indicadores municipales DANE no están disponibles para este código territorial.");
-  if (coordinatesValid && poiScoreResult.status === "fulfilled" && poiScoreResult.value.error) warnings.push("No fue posible consultar el conteo de puntos de interés local.");
+  if (coordinatesValid && poiScoreResult.error) warnings.push("No fue posible consultar el conteo de puntos de interés local.");
   if (!coordinatesValid) warnings.push("Este inmueble no tiene coordenadas válidas para mostrar el mapa ni consultar puntos de interés.");
-  if (property.cadastral_id && !/^\d{30}$/.test(property.cadastral_id.replace(/[^\d]/g, ""))) {
+  if (cadastralLookup.method === "coordinates" && property.cadastral_id && !/^\d{30}$/.test(property.cadastral_id.replace(/[^\d]/g, ""))) {
     warnings.push("El identificador ingresado no tiene el formato nacional de 30 dígitos admitido por la consulta predial IGAC; se usaron coordenadas como alternativa.");
   }
 
@@ -201,12 +220,16 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       issueDate: new Date().toISOString(),
       requestedBy: "Usuario de la plataforma",
       evaluator: "David Basto Real Estate · Informe automatizado de consulta pública",
+      isMacroLotWarning: cadastralLookup.method === "coordinates",
     },
     subjectProperty: {
       id: property.id,
       title: property.title,
       address: property.location,
+      type: property.type,
       listedAreaM2: property.area,
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
       coordinates: coordinatesValid ? { lat: property.lat, lng: property.lng } : null,
       legal: { cadastralId: property.cadastral_id || cadastralNumber || "No registrado", realEstateId: "No registrado" },
       mainImageBase64: null,
@@ -240,6 +263,7 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       },
       poiCounts,
       poiCells,
+      poiSearchRadiusUsed,
       dane: {
         asOf: typeof census?.as_of === "string" ? census.as_of : null,
         censusYear: numberOrNull(censusRow?.year),
@@ -251,6 +275,10 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       },
     },
     warnings,
+    predictiveAnalysis: {
+      physicalRisks: { landslide: "No disponible en las fuentes consultadas", flooding: "No disponible en las fuentes consultadas" },
+      capitalGainCatalysts: [],
+    },
   };
   return data;
 }
@@ -263,11 +291,17 @@ export async function addReportImage(data: CadastralReportData, images: string[]
   const imageUrl = images.find(value => !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(value));
   if (!imageUrl) return data;
   try {
-    const parsed = new URL(imageUrl);
+    const original = new URL(imageUrl);
+    const isDriveLink = original.protocol === "https:" && ["drive.google.com", "www.drive.google.com"].includes(original.hostname);
+    const driveId = original.pathname.match(/\/file\/d\/([^/]+)/)?.[1] || original.searchParams.get("id");
+    const parsed = isDriveLink && driveId
+      ? new URL(`https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600`)
+      : original;
     const isSupabaseImage = parsed.protocol === "https:" && parsed.host === allowedHost
       && parsed.pathname.startsWith("/storage/v1/object/public/property-images/");
     const isUnsplashImage = parsed.protocol === "https:" && parsed.host === "images.unsplash.com";
-    if (!isSupabaseImage && !isUnsplashImage) return data;
+    const isDriveThumbnail = parsed.protocol === "https:" && parsed.hostname === "drive.google.com" && parsed.pathname === "/thumbnail" && Boolean(driveId);
+    if (!isSupabaseImage && !isUnsplashImage && !isDriveThumbnail) return data;
     const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(2500), cache: "no-store" });
     const contentType = response.headers.get("content-type") || "";
     const length = Number(response.headers.get("content-length") || 0);

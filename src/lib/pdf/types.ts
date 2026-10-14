@@ -23,12 +23,16 @@ export type CadastralReportData = {
     issueDate: string;
     requestedBy: string;
     evaluator: string;
+    isMacroLotWarning: boolean;
   };
   subjectProperty: {
     id: number;
     title: string;
     address: string;
+    type: string;
     listedAreaM2: number;
+    bedrooms: number;
+    bathrooms: number;
     coordinates: { lat: number; lng: number } | null;
     legal: { cadastralId: string; realEstateId: string };
     mainImageBase64: Buffer | null;
@@ -54,6 +58,7 @@ export type CadastralReportData = {
     } | null;
   };
   geoSpatialContext: {
+    poiSearchRadiusUsed: number;
     potNormative: { landUse: string; maxHeight: string; treatment: string };
     poiCounts: { transport: number; commercial: number; health: number; education: number; parks: number };
     poiCells: Array<{ lat: number; lng: number; count: number }>;
@@ -66,6 +71,10 @@ export type CadastralReportData = {
       municipalStratumDistribution: Record<string, number> | null;
       ipm: number | null;
     };
+  };
+  predictiveAnalysis: {
+    physicalRisks: { landslide: string; flooding: string };
+    capitalGainCatalysts: Array<{ projectType: string; distanceMeters: number; completionYear: number | "En planeación" }>;
   };
   warnings: string[];
 };
