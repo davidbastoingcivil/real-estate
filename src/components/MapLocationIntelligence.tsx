@@ -29,24 +29,24 @@ function GeoAiBasemap() {
     let tileErrors = 0;
     let primaryLoaded = false;
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
-    const addOpenStreetMapFallback = () => {
+    const addCartoFallback = () => {
       if (disposed || fallback) return;
-      fallback = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      fallback = L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        maxZoom: 20,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
       }).addTo(map);
     };
-    primary = L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 20,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    primary = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
     primary.on("load", () => { primaryLoaded = true; });
     primary.on("tileerror", () => {
       tileErrors += 1;
-      if (tileErrors >= 3) addOpenStreetMapFallback();
+      if (tileErrors >= 3) addCartoFallback();
     });
     fallbackTimer = setTimeout(() => {
-      if (!disposed && !primaryLoaded) addOpenStreetMapFallback();
+      if (!disposed && !primaryLoaded) addCartoFallback();
     }, 7000);
     return () => {
       disposed = true;
