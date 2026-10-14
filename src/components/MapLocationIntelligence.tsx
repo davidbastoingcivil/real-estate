@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Circle, CircleMarker, GeoJSON, MapContainer, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { vectorBasemapLayer } from "esri-leaflet-vector/src/EsriLeafletVector.js";
 import type { Feature, Geometry } from "geojson";
 import Link from "next/link";
