@@ -29,11 +29,11 @@ function GeoAiBasemap() {
     let tileErrors = 0;
     let primaryLoaded = false;
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
-    const addCartoFallback = () => {
+    const addEsriFallback = () => {
       if (disposed || fallback) return;
-      fallback = L.tileLayer("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        maxZoom: 20,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      fallback = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 16,
+        attribution: '&copy; <a href="https://www.esri.com/">Esri</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map);
     };
     primary = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -43,10 +43,10 @@ function GeoAiBasemap() {
     primary.on("load", () => { primaryLoaded = true; });
     primary.on("tileerror", () => {
       tileErrors += 1;
-      if (tileErrors >= 3) addCartoFallback();
+      if (tileErrors >= 3) addEsriFallback();
     });
     fallbackTimer = setTimeout(() => {
-      if (!disposed && !primaryLoaded) addCartoFallback();
+      if (!disposed && !primaryLoaded) addEsriFallback();
     }, 7000);
     return () => {
       disposed = true;
