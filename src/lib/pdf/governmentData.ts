@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CadastralProperty, CadastralReportData } from "@/lib/pdf/types";
+import { fetchPOIsOnTheFly, makePoiHeatmap, type LivePoi } from "@/lib/geo/overpassClient";
 
 type JsonRecord = Record<string, unknown>;
 type PoiCell = CadastralReportData["geoSpatialContext"]["poiCells"][number];
@@ -12,15 +13,6 @@ const numberOrNull = (value: unknown): number | null => {
 
 const asObject = (value: unknown): JsonRecord | null =>
   value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
-
-async function safeSpatialRpc(client: SupabaseClient, name: string, args: Record<string, number>) {
-  try {
-    const { data, error } = await client.rpc(name, args);
-    return { data: data as unknown, error: error ? { message: error.message } : null };
-  } catch (error) {
-    return { data: null, error: { message: error instanceof Error ? error.message : "Spatial query failed" } };
-  }
-}
 
 function firstResult(payload: JsonRecord) {
   const results = Array.isArray(payload.results) ? payload.results : [];
@@ -96,28 +88,28 @@ function encodePolyline(points: Array<[number, number]>) {
   return result;
 }
 
-async function buildStaticMap(property: CadastralProperty, cells: PoiCell[]) {
-  const token = process.env.MAPBOX_ACCESS_TOKEN?.trim();
-  if (!token) return null;
-  const lat = Number(property.lat);
-  const lng = Number(property.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
-
-  const circle = Array.from({ length: 49 }, (_, index) => {
-    const angle = index / 48 * Math.PI * 2;
-    const dLat = 500 / 111_320;
-    const dLng = 500 / (111_320 * Math.max(Math.abs(Math.cos(lat * Math.PI / 180)), 0.1));
+function staticMapUrl(lat: number, lng: number, points: LivePoi[], token: string, includeRadius: boolean) {
+  const coordinate = (value: number) => Number(value.toFixed(6)).toString();
+  const circle = includeRadius ? Array.from({ length: 25 }, (_, index) => {
+    const angle = index / 24 * Math.PI * 2;
+    const dLat = 1_000 / 111_320;
+    const dLng = 1_000 / (111_320 * Math.max(Math.abs(Math.cos(lat * Math.PI / 180)), 0.1));
     return [lng + dLng * Math.cos(angle), lat + dLat * Math.sin(angle)] as [number, number];
-  });
-  const radiusOverlay = `path-3+d4af37-0.9+10251d-0.15(${encodePolyline(circle)})`;
+  }) : null;
+  const radiusOverlay = circle ? `path-3+d4af37-0.9+10251d-0.15(${encodeURIComponent(encodePolyline(circle))})` : null;
   const overlays = [
-    `pin-l+d4af37(${lng},${lat})`,
-    ...(cells.length ? cells.slice(0, 12).map(cell => `pin-s+3b82f6(${cell.lng},${cell.lat})`) : []),
-    radiusOverlay,
+    `pin-l+d4af37(${coordinate(lng)},${coordinate(lat)})`,
+    ...points.map(point => `pin-s+3b82f6(${coordinate(point.lng)},${coordinate(point.lat)})`),
+    ...(radiusOverlay ? [radiusOverlay] : []),
   ].join(",");
-  const url = `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/${overlays}/auto/900x520@2x?access_token=${encodeURIComponent(token)}`;
+  const url = new URL(`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/${overlays}/auto/900x520@2x`);
+  url.searchParams.set("access_token", token);
+  return url.toString();
+}
+
+async function fetchStaticMapImage(url: string) {
   try {
-    const response = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5000) });
+    const response = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(4_500) });
     const contentType = response.headers.get("content-type") || "";
     const length = Number(response.headers.get("content-length") || 0);
     if (!response.ok || !/^image\/(png|jpeg)$/i.test(contentType) || length > 4_000_000) return null;
@@ -127,6 +119,38 @@ async function buildStaticMap(property: CadastralProperty, cells: PoiCell[]) {
   } catch {
     return null;
   }
+}
+
+async function buildStaticMap(property: CadastralProperty, points: LivePoi[]) {
+  const token = process.env.MAPBOX_ACCESS_TOKEN?.trim();
+  if (!token) return null;
+  const lat = Number(property.lat);
+  const lng = Number(property.lng);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180 || (lat === 0 && lng === 0)) return null;
+
+  const nearest = points.slice(0, 10);
+  let candidate: string | null = null;
+  let markerCount = nearest.length;
+  for (; markerCount >= 0; markerCount -= 1) {
+    const current = staticMapUrl(lat, lng, nearest.slice(0, markerCount), token, true);
+    if (current.length <= 1_800) { candidate = current; break; }
+  }
+  if (!candidate) {
+    const withoutRadius = staticMapUrl(lat, lng, [], token, false);
+    if (withoutRadius.length > 1_800) return null;
+    candidate = withoutRadius;
+  }
+  const image = await fetchStaticMapImage(candidate);
+  if (image) return image;
+  if (markerCount > 0) {
+    const propertyOnly = staticMapUrl(lat, lng, [], token, true);
+    if (propertyOnly.length <= 1_800) {
+      const retry = await fetchStaticMapImage(propertyOnly);
+      if (retry) return retry;
+    }
+  }
+  const noRadius = staticMapUrl(lat, lng, [], token, false);
+  return noRadius.length <= 1_800 ? fetchStaticMapImage(noRadius) : null;
 }
 
 export async function getGovernmentReportData(property: CadastralProperty, supabase: SupabaseClient) {
@@ -139,52 +163,21 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   const municipalityCode = typeof officialProperty?.municipality_code === "string" ? officialProperty.municipality_code : null;
   const municipality = typeof officialProperty?.municipality === "string" ? officialProperty.municipality : property.municipality;
 
-  const [initialPoiScore, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
-    coordinatesValid ? safeSpatialRpc(supabase, "get_location_intelligence_score", { lat: property.lat, lng: property.lng, radius_meters: 500 }) : Promise.resolve({ data: null, error: null }),
+  const [livePoiResult, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
+    coordinatesValid ? fetchPOIsOnTheFly(property.lat, property.lng, 1_000) : Promise.resolve(null),
     municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
     municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
     municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }) : Promise.resolve(null),
   ]);
-
-  const initialScore = initialPoiScore.status === "fulfilled" && !initialPoiScore.value.error ? asObject(initialPoiScore.value.data) : null;
-  const initialCounts = asObject(initialScore?.poi_counts);
-  const hasPoisAtInitialRadius = Object.values(initialCounts || {}).some(value => (numberOrNull(value) || 0) > 0);
-  const poiSearchRadiusUsed = !coordinatesValid || hasPoisAtInitialRadius ? 500 : 2500;
-  const [poiScoreResult, poiHeatmapResult] = await Promise.all([
-    poiSearchRadiusUsed === 500 && initialPoiScore.status === "fulfilled" ? Promise.resolve(initialPoiScore.value) : coordinatesValid
-      ? safeSpatialRpc(supabase, "get_location_intelligence_score", { lat: property.lat, lng: property.lng, radius_meters: poiSearchRadiusUsed })
-      : Promise.resolve({ data: null, error: null }),
-    coordinatesValid ? safeSpatialRpc(supabase, "get_location_intelligence_heatmap", { lat: property.lat, lng: property.lng, radius_meters: poiSearchRadiusUsed, cell_size_meters: 300 }) : Promise.resolve({ data: null, error: null }),
-  ]);
-
-  let poiCounts = { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
-  if (!poiScoreResult.error) {
-    const score = asObject(poiScoreResult.data);
-    const counts = asObject(score?.poi_counts);
-    if (counts) poiCounts = {
-      transport: numberOrNull(counts.transport) || 0,
-      commercial: numberOrNull(counts.commerce) || 0,
-      health: numberOrNull(counts.health) || 0,
-      education: numberOrNull(counts.education) || 0,
-      parks: numberOrNull(counts.recreation) || 0,
-    };
-  }
-
-  let poiCells: PoiCell[] = [];
-  if (!poiHeatmapResult.error) {
-    const heatmap = asObject(poiHeatmapResult.data);
-    const features = Array.isArray(heatmap?.features) ? heatmap.features : [];
-    poiCells = features.flatMap(feature => {
-      const row = asObject(feature);
-      const geometry = asObject(row?.geometry);
-      const props = asObject(row?.properties);
-      const coords = Array.isArray(geometry?.coordinates) ? geometry.coordinates : [];
-      const lng = numberOrNull(coords[0]);
-      const lat = numberOrNull(coords[1]);
-      const count = numberOrNull(props?.poi_count);
-      return lat !== null && lng !== null && count !== null ? [{ lat, lng, count }] : [];
-    }).slice(0, 30);
-  }
+  const livePois = livePoiResult.status === "fulfilled" ? livePoiResult.value : null;
+  const poiSearchRadiusUsed = 1_000;
+  const poiCounts = livePois?.counts || { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
+  const poiHeatmap = makePoiHeatmap(livePois?.points || [], poiSearchRadiusUsed, 300);
+  const poiCells: PoiCell[] = poiHeatmap.features.map(feature => ({
+    lng: feature.geometry.coordinates[0],
+    lat: feature.geometry.coordinates[1],
+    count: feature.properties.poi_count,
+  }));
 
   const census = censusResult.status === "fulfilled" ? censusResult.value : null;
   const censusRow = census ? firstResult(census) : null;
@@ -205,14 +198,15 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   if (censusResult.status === "rejected" || ipmResult.status === "rejected") warnings.push("No se pudieron consultar algunos indicadores territoriales del DANE.");
   if (municipalStatsResult.status === "rejected") warnings.push("No fue posible obtener las estadísticas municipales catastrales del IGAC.");
   if (municipalityCode && (!census || !ipm)) warnings.push("Los indicadores municipales DANE no están disponibles para este código territorial.");
-  if (coordinatesValid && poiScoreResult.error) warnings.push("No fue posible consultar el conteo de puntos de interés local.");
+  if (coordinatesValid && livePois?.warning) warnings.push(livePois.warning);
   if (!coordinatesValid) warnings.push("Este inmueble no tiene coordenadas válidas para mostrar el mapa ni consultar puntos de interés.");
   if (cadastralLookup.method === "coordinates" && property.cadastral_id && !/^\d{30}$/.test(property.cadastral_id.replace(/[^\d]/g, ""))) {
     warnings.push("El identificador ingresado no tiene el formato nacional de 30 dígitos admitido por la consulta predial IGAC; se usaron coordenadas como alternativa.");
   }
 
   const found = typeof cadastralLookup.payload?.found === "boolean" ? cadastralLookup.payload.found : null;
-  const mapBase64 = await buildStaticMap(property, poiCells);
+  const mapBase64 = await buildStaticMap(property, livePois?.topPoints || []);
+  if (coordinatesValid && !mapBase64) warnings.push("El mapa satelital no está disponible; las demás secciones del informe se generaron normalmente.");
   const cadastralNumber = typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number : null;
   const data: CadastralReportData = {
     metadata: {
@@ -264,6 +258,8 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       poiCounts,
       poiCells,
       poiSearchRadiusUsed,
+      poiSource: livePois?.available ? "OpenStreetMap" : "No disponible",
+      poiFetchedAt: livePois?.available ? livePois.fetchedAt : null,
       dane: {
         asOf: typeof census?.as_of === "string" ? census.as_of : null,
         censusYear: numberOrNull(censusRow?.year),

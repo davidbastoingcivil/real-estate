@@ -62,6 +62,8 @@ export type CadastralReportData = {
     potNormative: { landUse: string; maxHeight: string; treatment: string };
     poiCounts: { transport: number; commercial: number; health: number; education: number; parks: number };
     poiCells: Array<{ lat: number; lng: number; count: number }>;
+    poiSource: "OpenStreetMap" | "No disponible";
+    poiFetchedAt: string | null;
     dane: {
       asOf: string | null;
       censusYear: number | null;

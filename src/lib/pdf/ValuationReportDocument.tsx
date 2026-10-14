@@ -92,7 +92,7 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
       {data.subjectProperty.staticMapBase64
         ? <Image src={data.subjectProperty.staticMapBase64} style={styles.map}/>
         : <View style={styles.mapPlaceholder}><Text style={styles.mapPlaceholderText}>Mapa no disponible</Text></View>}
-      <Text style={styles.mapCaption}>Radio de análisis: {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} m · Punto del inmueble en dorado · POI agregados · © Mapbox · © OpenStreetMap.</Text>
+      <Text style={styles.mapCaption}>Radio de análisis: {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} m · Inmueble en dorado · POI cercanos en azul · © Mapbox · © OpenStreetMap.</Text>
     </View>
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>NORMA URBANA · POT</Text>
@@ -113,7 +113,7 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
         <Fact label="SALUD" value={String(poiCounts.health)}/>
         <Fact label="PARQUES Y RECREACIÓN" value={String(poiCounts.parks)}/>
       </View>
-      <Text style={styles.sourceNote}>Los conteos se calculan con los POI presentes en la plataforma al momento de generar el informe; el mapa muestra celdas agregadas. No se descargan ni almacenan nuevos puntos en Supabase.</Text>
+      <Text style={styles.sourceNote}>Fuente: {data.geoSpatialContext.poiSource}. Los puntos se consultan al generar el informe y no se escriben en Supabase. Los datos de OpenStreetMap pueden estar incompletos y se distribuyen bajo ODbL.{data.geoSpatialContext.poiFetchedAt ? ` Consulta: ${dateLabel(data.geoSpatialContext.poiFetchedAt)}.` : ""}</Text>
     </View>
   </>;
 }

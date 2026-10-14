@@ -10,10 +10,15 @@ import { Activity, Layers3, LoaderCircle, MapPin, Route } from "lucide-react";
 import { formatCOP, type Property } from "@/data/properties";
 import { usePropertyApp } from "@/components/AppProvider";
 import type { GeoAiAnalysis, TravelMode } from "@/lib/geoaiEngine";
+import type { LivePoiCounts, PoiCategory } from "@/lib/geo/overpassClient";
 
 type ApiResponse = GeoAiAnalysis & {
   property: { id: number; title: string } | null;
   coordinates: { lat: number; lng: number };
+  poiSource: "OpenStreetMap" | "No disponible";
+  poiFetchedAt: string;
+  poiWarning: string | null;
+  livePoiCounts: LivePoiCounts;
   error?: string;
 };
 
@@ -79,6 +84,15 @@ function FocusLocation({ position }: { position: [number, number] | null }) {
 
 function formatScore(value: number | null) {
   return value === null ? "Sin datos" : `${(value / 10).toFixed(1)} / 10`;
+}
+
+const poiLabels: Array<[PoiCategory, string]> = [
+  ["transport", "Transporte"], ["education", "Educación"], ["commercial", "Comercio"],
+  ["health", "Salud"], ["parks", "Parques"],
+];
+
+function confidenceLabel(value: string | undefined) {
+  return ({ no_data: "Sin cobertura", limited: "Baja", moderate: "Media", good: "Buena" })[value || "no_data"];
 }
 
 export default function MapLocationIntelligence({ properties: propertySource }: { properties?: Property[] }) {
@@ -171,10 +185,13 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
           <div><span>Infraestructura</span><b>{loading ? "Calculando…" : formatScore(intelligence?.infrastructure_growth_score ?? null)}</b></div>
           <div><span>Riesgos</span><b>{loading ? "Calculando…" : formatScore(intelligence?.risk_score ?? null)}</b></div>
         </div>
-        <div className="geoai-data-summary"><span>{intelligence?.total_pois ?? 0} POI en el radio</span><span>Confianza: {intelligence?.confidence ?? "no_data"}</span></div>
-        {!loading && !intelligence?.total_pois && <small className="geoai-error">Sin puntos de interés georreferenciados para calcular métricas en esta ubicación y radio.</small>}
-        <small className="geoai-disclaimer">Los círculos agregan POI cargados en la base. El polígono usa velocidad promedio y no representa rutas reales.</small>
-        {analysis?.warnings.map(warning => <small className="geoai-error" key={warning}>{warning}</small>)}
+        <div className="geoai-data-summary"><span>{intelligence?.total_pois ?? 0} POI en el radio</span><span>Cobertura: {confidenceLabel(intelligence?.confidence)}</span></div>
+        {analysis?.livePoiCounts && <div className="geoai-poi-count-grid" aria-label="Puntos de interés consultados en vivo">
+          {poiLabels.map(([category, label]) => <div key={category}><span>{label}</span><b>{analysis.livePoiCounts[category]}</b></div>)}
+        </div>}
+        {!loading && !intelligence?.total_pois && <small className="geoai-error">{analysis?.poiWarning || "OpenStreetMap no encontró puntos de interés en esta ubicación y radio."}</small>}
+        <small className="geoai-disclaimer">Los puntos se consultan al vuelo desde OpenStreetMap y no se guardan en Supabase. Los puntajes de inversión requieren capas oficiales verificadas. El polígono es una aproximación, no una ruta real.</small>
+        {analysis?.warnings.filter(warning => warning !== analysis.poiWarning).map(warning => <small className="geoai-error" key={warning}>{warning}</small>)}
       </>}
     </aside>}
   </section>;

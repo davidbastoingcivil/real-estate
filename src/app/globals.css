@@ -475,3 +475,6 @@ body:has(.detail-page) .mobile-bottom-nav a.active,body:has(.app-page) .mobile-b
 @media(max-width:760px){.avm-card{padding:16px}.avm-value-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.avm-value-main{grid-column:1/-1}.avm-metric{border-top:1px solid var(--line,#d9d8d3)}.avm-metric:nth-of-type(odd){border-left:0}.avm-card-heading{gap:8px}.avm-tag{padding:6px 7px;font-size:8px}}
 
 .avm-report-copy{max-width:720px;color:#bdc3bd;font-size:12px;line-height:1.8}
+
+.geoai-poi-count-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:7px 0 9px}.geoai-poi-count-grid>div{display:flex;flex-direction:column;gap:3px;padding:6px 4px;background:#ffffff08;border:1px solid #ffffff10;text-align:center}.geoai-poi-count-grid span{color:#b9c0b8;font-size:7px;line-height:1.2}.geoai-poi-count-grid b{color:var(--gold-light);font-size:10px}
+@media(max-width:760px){.geoai-poi-count-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:5px 0 7px}.geoai-poi-count-grid>div{padding:5px 3px}}
