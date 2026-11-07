@@ -29,6 +29,7 @@ export type PropertyInput = {
   official_built_area: number | null;
   deposits: number;
   municipality: string;
+  municipality_code: string;
   department: string;
   features: string[];
   categories: ("Buy" | "Rent" | "Projects" | "Commercial")[];
@@ -40,7 +41,26 @@ export type PropertyInput = {
   dossier: ProjectDossier;
 };
 
-type ActionResult = { success: true } | { success: false; error: string };
+type ActionResult = { success: true; warning?: string } | { success: false; error: string };
+
+const extendedPropertyColumns = [
+  "property_code", "periodicity", "garage_spaces", "municipality_code", "chip", "national_cadastral_number",
+  "real_estate_registration", "stratum", "cadastral_appraisal", "official_lot_area", "official_built_area",
+  "deposits", "audio_tours", "video_presentations", "dossier",
+] as const;
+
+function isMissingMigrationColumn(error: { code?: string | null; message?: string | null }) {
+  return error.code === "42703" || error.code === "PGRST204"
+    || /schema cache|column .* does not exist|could not find .* column/i.test(error.message || "");
+}
+
+function legacyPropertyValues(values: ReturnType<typeof dbValues>) {
+  const legacy: Record<string, unknown> = { ...values };
+  for (const column of extendedPropertyColumns) delete legacy[column];
+  return legacy;
+}
+
+const migrationWarning = "Se guardaron los datos básicos. Aún faltan migraciones de Supabase: los campos catastrales ampliados, la ficha del proyecto y los enlaces multimedia no se guardaron. Ejecuta las migraciones pendientes para habilitarlos.";
 
 async function authorizedClient() {
   const supabase = await createSupabaseServerClient();
@@ -74,6 +94,7 @@ function validate(data: PropertyInput) {
   if (data.chip.length > 40 || /[^a-zA-Z0-9 .-]/.test(data.chip)) throw new Error("El CHIP debe tener máximo 40 caracteres alfanuméricos.");
   if (data.national_cadastral_number && !/^\d{30}$/.test(data.national_cadastral_number)) throw new Error("El Número Predial Nacional debe tener exactamente 30 dígitos.");
   if (data.real_estate_registration.length > 40) throw new Error("La matrícula inmobiliaria debe tener máximo 40 caracteres.");
+  if (data.municipality_code && !/^\d{5}$/.test(data.municipality_code)) throw new Error("El código DIVIPOLA debe contener exactamente cinco dígitos.");
   if (data.stratum !== null && (!Number.isInteger(data.stratum) || data.stratum < 0 || data.stratum > 6)) throw new Error("El estrato debe estar entre 0 y 6.");
   if ([data.cadastral_appraisal, data.official_lot_area, data.official_built_area].some(value => value !== null && (!Number.isFinite(value) || value < 0))) throw new Error("Revisa el avalúo y las áreas oficiales registradas.");
   if (data.bedrooms < 0 || data.bathrooms < 0 || data.garage_spaces < 0 || !Number.isInteger(data.bedrooms) || !Number.isInteger(data.bathrooms) || !Number.isInteger(data.garage_spaces)) {
@@ -99,6 +120,7 @@ function dbValues(data: PropertyInput) {
     garage_spaces: data.garage_spaces,
     location: data.location_text.trim(),
     municipality: data.municipality.trim() || data.location_text.split(",")[0]?.trim() || "",
+    municipality_code: data.municipality_code.trim() || null,
     ["ubicación"]: data.department.trim() || data.location_text.split(",").slice(1).join(",").trim(),
     status: data.status === "Disponible" || data.status === "Oculto" ? "En Venta" : data.status === "En arriendo" ? "En Arriendo" : "Vendido",
     is_published: data.status !== "Oculto",
@@ -171,16 +193,24 @@ export async function createProperty(data: PropertyInput): Promise<ActionResult>
       if (!existing) break;
       slug = `${baseSlug}-${suffix++}`;
     }
-    const { data: created, error } = await supabase.from("properties").insert({
-      ...dbValues(data), slug,
-    }).select("id").single();
+    const values = { ...dbValues(data), slug };
+    let { data: created, error } = await supabase.from("properties").insert(values).select("id").single();
+    let migrationPending = false;
+    if (error && isMissingMigrationColumn(error)) {
+      const legacy = { ...legacyPropertyValues(values as ReturnType<typeof dbValues>), slug };
+      const fallback = await supabase.from("properties").insert(legacy).select("id").single();
+      created = fallback.data;
+      error = fallback.error;
+      migrationPending = !error;
+    }
     if (error) throw error;
+    if (!created) throw new Error("Supabase no devolvió el inmueble creado.");
     if (data.featured) {
       const { error: featuredError } = await supabase.rpc("set_featured_property", { target_id: created.id });
       if (featuredError) throw featuredError;
     }
     refreshCatalog();
-    return { success: true };
+    return migrationPending ? { success: true, warning: migrationWarning } : { success: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "No se pudo crear el inmueble." };
   }
@@ -190,20 +220,27 @@ export async function updateProperty(id: number, data: PropertyInput): Promise<A
   try {
     if (!Number.isSafeInteger(id) || id < 1) throw new Error("El identificador del inmueble no es válido.");
     const supabase = await authorizedClient();
-    const { data: existing, error: readError } = await supabase.from("properties").select("images,audio_tours,video_presentations").eq("id", id).maybeSingle();
+    const { data: existing, error: readError } = await supabase.from("properties").select("*").eq("id", id).maybeSingle();
     if (readError) throw readError;
     if (!existing) throw new Error("El inmueble ya no existe.");
-    const { error } = await supabase.from("properties").update(dbValues(data)).eq("id", id);
+    const values = dbValues(data);
+    let { error } = await supabase.from("properties").update(values).eq("id", id);
+    let migrationPending = false;
+    if (error && isMissingMigrationColumn(error)) {
+      const fallback = await supabase.from("properties").update(legacyPropertyValues(values)).eq("id", id);
+      error = fallback.error;
+      migrationPending = !error;
+    }
     if (error) throw error;
     if (data.featured) {
       const { error: featuredError } = await supabase.rpc("set_featured_property", { target_id: id });
       if (featuredError) throw featuredError;
     }
-    const previousFiles = [...(existing.images || []), ...mediaUrls(existing.audio_tours), ...mediaUrls(existing.video_presentations)];
-    const retainedFiles = [...data.images, ...mediaUrls(data.audio_tours), ...mediaUrls(data.video_presentations)];
+    const previousFiles = migrationPending ? (existing.images || []) : [...(existing.images || []), ...mediaUrls(existing.audio_tours), ...mediaUrls(existing.video_presentations)];
+    const retainedFiles = migrationPending ? data.images : [...data.images, ...mediaUrls(data.audio_tours), ...mediaUrls(data.video_presentations)];
     await removeUnreferencedStorageFiles(supabase, previousFiles, retainedFiles);
     refreshCatalog();
-    return { success: true };
+    return migrationPending ? { success: true, warning: migrationWarning } : { success: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "No se pudo actualizar el inmueble." };
   }
@@ -213,7 +250,7 @@ export async function deleteProperty(id: number): Promise<ActionResult> {
   try {
     if (!Number.isSafeInteger(id) || id < 1) throw new Error("El identificador del inmueble no es válido.");
     const supabase = await authorizedClient();
-    const { data: existing, error: readError } = await supabase.from("properties").select("images,audio_tours,video_presentations").eq("id", id).maybeSingle();
+    const { data: existing, error: readError } = await supabase.from("properties").select("*").eq("id", id).maybeSingle();
     if (readError) throw readError;
     if (!existing) throw new Error("El inmueble ya no existe.");
     const { error } = await supabase.from("properties").delete().eq("id", id);

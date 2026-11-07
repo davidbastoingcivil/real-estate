@@ -5,6 +5,8 @@ import { fetchPOIsOnTheFly, makePoiHeatmap, type LivePoi } from "@/lib/geo/overp
 type JsonRecord = Record<string, unknown>;
 type PoiCell = CadastralReportData["geoSpatialContext"]["poiCells"][number];
 
+export class CadastralValidationError extends Error {}
+
 const numberOrNull = (value: unknown): number | null => {
   if (value === null || value === undefined || value === "") return null;
   const number = typeof value === "number" ? value : Number(value);
@@ -52,6 +54,13 @@ async function lookupCadastral(property: CadastralProperty) {
     } catch {
       // Una consulta por identificador no debe impedir el fallback a coordenadas.
     }
+  }
+
+  // CHIP is a Bogotá-specific identifier. Without a documented, authorized
+  // CHIP lookup adapter, never substitute a nearby coordinate result as if it
+  // were the exact parcel.
+  if (property.chip?.trim() && !cromaCadastralNumber) {
+    return { payload: null, method: "none" as const };
   }
 
   const lat = Number(property.lat);
@@ -164,7 +173,28 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
     && !(property.lat === 0 && property.lng === 0);
   const cadastralLookup = await lookupCadastral(property);
   const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
-  const municipalityCode = typeof officialProperty?.municipality_code === "string" ? officialProperty.municipality_code : null;
+  const externalMunicipalityCode = typeof officialProperty?.municipality_code === "string" && /^\d{5}$/.test(officialProperty.municipality_code)
+    ? officialProperty.municipality_code : null;
+  const declaredMunicipalityCode = property.municipality_code?.trim() || null;
+  if (declaredMunicipalityCode && !/^\d{5}$/.test(declaredMunicipalityCode)) {
+    throw new CadastralValidationError("El código DIVIPOLA registrado en la ficha no tiene cinco dígitos. Corrígelo antes de generar el informe.");
+  }
+  if (declaredMunicipalityCode && externalMunicipalityCode && declaredMunicipalityCode !== externalMunicipalityCode) {
+    throw new CadastralValidationError(`El DIVIPOLA de la ficha (${declaredMunicipalityCode}) no coincide con la consulta catastral (${externalMunicipalityCode}). Revisa ubicación y coordenadas.`);
+  }
+  const municipalityCode = externalMunicipalityCode || declaredMunicipalityCode;
+  const npnCandidates = [
+    property.national_cadastral_number,
+    property.cadastral_id,
+    typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number : null,
+  ].map(value => (value || "").replace(/\D/g, "")).filter(value => /^\d{30}$/.test(value));
+  const npnPrefix = npnCandidates[0]?.slice(0, 5) || null;
+  if (npnPrefix && !municipalityCode) {
+    throw new CadastralValidationError("No se pudo confirmar el municipio del Número Predial Nacional. Registra el código DIVIPOLA de cinco dígitos en la ficha o verifica la consulta catastral.");
+  }
+  if (npnPrefix && npnCandidates.some(candidate => candidate.slice(0, 5) !== municipalityCode)) {
+    throw new CadastralValidationError(`El prefijo ${npnPrefix} del Número Predial Nacional no coincide con el código DIVIPOLA ${municipalityCode}. Verifica el número y la ubicación antes de generar el informe.`);
+  }
   const municipality = typeof officialProperty?.municipality === "string" ? officialProperty.municipality : property.municipality;
 
   const [livePoiResult, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
@@ -197,7 +227,9 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
     return count === null ? [] : [[key, count]];
   })) : null;
 
-  if (!cadastralLookup.payload) warnings.push("No fue posible consultar los registros catastrales del IGAC en este momento.");
+  if (property.chip?.trim() && !/^\d{30}$/.test((property.national_cadastral_number || property.cadastral_id || "").replace(/\D/g, ""))) {
+    warnings.push("El CHIP no se consultó como identificador exacto: se requiere integrar un servicio autorizado de Catastro Bogotá. No se sustituyó con una búsqueda por coordenadas. Registra el Número Predial Nacional de 30 dígitos o verifica el certificado catastral.");
+  } else if (!cadastralLookup.payload) warnings.push("No fue posible consultar los registros catastrales del IGAC en este momento.");
   else if (cadastralLookup.payload.found === false) warnings.push("No se encontraron registros públicos para esta cédula catastral o ubicación.");
   if (censusResult.status === "rejected" || ipmResult.status === "rejected") warnings.push("No se pudieron consultar algunos indicadores territoriales del DANE.");
   if (municipalStatsResult.status === "rejected") warnings.push("No fue posible obtener las estadísticas municipales catastrales del IGAC.");
@@ -234,6 +266,9 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       id: property.id,
       title: property.title,
       address: property.location,
+      description: property.description,
+      price: property.price,
+      municipalityCode,
       type: property.type,
       listedAreaM2: property.area,
       bedrooms: property.bedrooms,
@@ -250,6 +285,7 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       deposits: Number(property.deposits || 0),
       dossierSections: property.dossier?.sections || [],
       mainImageBase64: null,
+      galleryImagesBase64: [],
       staticMapBase64: mapBase64,
     },
     officialData: {
@@ -281,9 +317,19 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       poiCounts,
       poiCells,
       poiSearchRadiusUsed,
+      poiAvailable: Boolean(livePois?.available),
+      poiStatus: !coordinatesValid
+        ? "Sin coordenadas válidas"
+        : !livePois?.available
+          ? "En validación territorial"
+          : livePois.total === 0
+            ? "Sin puntos registrados en el radio consultado"
+            : `${livePois.total} puntos registrados en el radio consultado`,
       poiSource: livePois?.available ? "OpenStreetMap" : "No disponible",
       poiFetchedAt: livePois?.available ? livePois.fetchedAt : null,
       dane: {
+        censusAvailable: censusRow !== null,
+        ipmAvailable: ipm !== null,
         asOf: typeof census?.as_of === "string" ? census.as_of : null,
         censusYear: numberOrNull(censusRow?.year),
         population: numberOrNull(population?.total),
@@ -309,9 +355,9 @@ export async function addReportImage(data: CadastralReportData, images: string[]
   if (!supabaseUrl) return data;
   let allowedHost: string;
   try { allowedHost = new URL(supabaseUrl).host; } catch { return data; }
-  const imageUrl = images.find(value => !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(value));
-  if (!imageUrl) return data;
-  try {
+  const imageUrls = images.filter(value => !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(value)).slice(0, 3);
+  if (!imageUrls.length) return data;
+  for (const imageUrl of imageUrls) try {
     const original = new URL(imageUrl);
     const isDriveLink = original.protocol === "https:" && ["drive.google.com", "www.drive.google.com"].includes(original.hostname);
     const driveId = original.pathname.match(/\/file\/d\/([^/]+)/)?.[1] || original.searchParams.get("id");
@@ -322,16 +368,17 @@ export async function addReportImage(data: CadastralReportData, images: string[]
       && parsed.pathname.startsWith("/storage/v1/object/public/property-images/");
     const isUnsplashImage = parsed.protocol === "https:" && parsed.host === "images.unsplash.com";
     const isDriveThumbnail = parsed.protocol === "https:" && parsed.hostname === "drive.google.com" && parsed.pathname === "/thumbnail" && Boolean(driveId);
-    if (!isSupabaseImage && !isUnsplashImage && !isDriveThumbnail) return data;
+    if (!isSupabaseImage && !isUnsplashImage && !isDriveThumbnail) continue;
     const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(2500), cache: "no-store" });
     const contentType = response.headers.get("content-type") || "";
     const length = Number(response.headers.get("content-length") || 0);
-    if (!response.ok || !/^image\/(jpeg|png)$/i.test(contentType) || length > 5_000_000) return data;
+    if (!response.ok || !/^image\/(jpeg|png)$/i.test(contentType) || length > 5_000_000) continue;
     const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > 5_000_000) return data;
-    data.subjectProperty.mainImageBase64 = Buffer.from(bytes);
+    if (bytes.byteLength > 5_000_000) continue;
+    data.subjectProperty.galleryImagesBase64.push(Buffer.from(bytes));
   } catch {
     // La falta de una imagen no debe bloquear el reporte.
   }
+  data.subjectProperty.mainImageBase64 = data.subjectProperty.galleryImagesBase64[0] || null;
   return data;
 }

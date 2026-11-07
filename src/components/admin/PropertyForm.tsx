@@ -18,7 +18,7 @@ const empty: Omit<PropertyFormData, "id"> = {
   bedrooms: 0, bathrooms: 0, garage_spaces: 0, location_text: "", status: "Disponible", lat: 4.1472, lng: -74.7201,
   cadastral_id: "", chip: "", national_cadastral_number: "", real_estate_registration: "", stratum: null,
   cadastral_appraisal: null, official_lot_area: null, official_built_area: null, deposits: 0,
-  municipality: "", department: "", features: [], categories: ["Buy"], payment: [], featured: false, images: [], audio_tours: [], video_presentations: [], dossier: {},
+  municipality: "", municipality_code: "", department: "", features: [], categories: ["Buy"], payment: [], featured: false, images: [], audio_tours: [], video_presentations: [], dossier: {},
 };
 
 const categoryOptions: Array<{ id: PropertyInput["categories"][number]; label: string }> = [
@@ -32,7 +32,7 @@ export default function PropertyForm({ initialData, propertyTypes = [] }: { init
   const router = useRouter();
   const [form, setForm] = useState<Omit<PropertyFormData, "id">>(initialData || empty);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ kind: "success" | "error" | "warning"; text: string } | null>(null);
   const [media, setMedia] = useState<string[]>(initialData?.images || []);
   const [audioTours, setAudioTours] = useState<AudioTour[]>(initialData?.audio_tours || []);
   const [videoPresentations, setVideoPresentations] = useState<VideoPresentation[]>(initialData?.video_presentations || []);
@@ -61,6 +61,11 @@ export default function PropertyForm({ initialData, propertyTypes = [] }: { init
       const result = initialData ? await updateProperty(initialData.id, payload) : await createProperty(payload);
       if (!result.success) {
         setNotice({ kind: "error", text: result.error });
+        return;
+      }
+      if (result.warning) {
+        setNotice({ kind: "warning", text: result.warning });
+        router.refresh();
         return;
       }
       setNotice({ kind: "success", text: initialData ? "El inmueble quedó actualizado." : "El inmueble quedó creado." });
@@ -149,6 +154,7 @@ export default function PropertyForm({ initialData, propertyTypes = [] }: { init
         <label className="admin-field">Garajes<input type="number" min="0" step="1" value={form.garage_spaces} onChange={e => field("garage_spaces", Number(e.target.value))}/></label>
         <label className="admin-field admin-cms-span-2">Ubicación<input required value={form.location_text} onChange={e => field("location_text", e.target.value)} placeholder="Municipio, departamento"/></label>
         <label className="admin-field">Municipio<input value={form.municipality} onChange={e => field("municipality", e.target.value)} placeholder="Carmen de Apicalá"/></label>
+        <label className="admin-field">Código DIVIPOLA del municipio<input inputMode="numeric" maxLength={5} value={form.municipality_code} onChange={e => field("municipality_code", e.target.value.replace(/\D/g, "").slice(0,5))} placeholder="73148"/><small>Necesario para validar el prefijo municipal del Número Predial Nacional.</small></label>
         <label className="admin-field">Departamento / zona<input value={form.department} onChange={e => field("department", e.target.value)} placeholder="Tolima"/></label>
         <label className="admin-field admin-cms-span-2">Número predial / cédula catastral<input maxLength={50} value={form.cadastral_id} onChange={e => field("cadastral_id", e.target.value)} placeholder="Número nacional de 30 dígitos; el antiguo tiene 20"/><small>Croma busca por número predial nacional de 30 dígitos. Para números antiguos de 20 dígitos, la consulta usa las coordenadas; también puedes convertirlo al número nacional con el conversor del IGAC.</small></label>
         <label className="admin-field">CHIP<input maxLength={40} value={form.chip} onChange={e => field("chip", e.target.value.toUpperCase())} placeholder="CHIP oficial si aplica"/></label>
@@ -192,7 +198,7 @@ export default function PropertyForm({ initialData, propertyTypes = [] }: { init
           {audioTours.map((item,index)=><div className="admin-cms-media-detail" key={`audio-${item.url}`}><span className="admin-audio-mark">MP3</span><input aria-label={`Título del audio ${index+1}`} value={item.title} onChange={event=>setAudioTours(current=>current.map((entry,i)=>i===index?{...entry,title:event.target.value}:entry))}/><input aria-label={`Duración del audio ${index+1}`} placeholder="Duración opcional" value={item.duration || ""} onChange={event=>setAudioTours(current=>current.map((entry,i)=>i===index?{...entry,duration:event.target.value}:entry))}/><button type="button" aria-label="Quitar audio" onClick={()=>setAudioTours(current=>current.filter((_,i)=>i!==index))}><Trash2 size={14}/></button></div>)}
         </div>}
       </section>
-      {notice && <div className={notice.kind === "success" ? "admin-success" : "admin-error"} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</div>}
+      {notice && <div className={notice.kind === "success" ? "admin-success" : "admin-error"} role={notice.kind === "error" || notice.kind === "warning" ? "alert" : "status"}>{notice.text}</div>}
       <div className="admin-cms-form-footer"><Link className="button button-outline" href="/admin">Cancelar</Link><button className="button button-dark" disabled={isSubmitting}><Save size={16}/>{isSubmitting ? "Guardando…" : initialData ? "Guardar cambios" : "Crear inmueble"}</button></div>
     </form>
   </>;

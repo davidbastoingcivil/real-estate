@@ -1,5 +1,6 @@
 alter table public.properties
   add column if not exists deposits integer not null default 0,
+  add column if not exists municipality_code varchar(5),
   add column if not exists chip varchar(40),
   add column if not exists national_cadastral_number varchar(30),
   add column if not exists real_estate_registration varchar(40),
@@ -9,6 +10,10 @@ alter table public.properties
   add column if not exists official_built_area numeric(10,2);
 
 do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'properties_municipality_code_divipola') then
+    alter table public.properties add constraint properties_municipality_code_divipola
+      check (municipality_code is null or municipality_code ~ '^\d{5}$');
+  end if;
   if not exists (select 1 from pg_constraint where conname = 'properties_national_cadastral_number_30_digits') then
     alter table public.properties add constraint properties_national_cadastral_number_30_digits
       check (national_cadastral_number is null or national_cadastral_number ~ '^\d{30}$');

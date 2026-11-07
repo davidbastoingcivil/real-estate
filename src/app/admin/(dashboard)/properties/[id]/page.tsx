@@ -8,11 +8,14 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
   if (!Number.isSafeInteger(id) || id < 1) notFound();
   const supabase = await createSupabaseServerClient();
   const [{ data, error }, { data: propertyTypes }] = await Promise.all([
-    supabase.from("properties").select('id,title,description,price,property_code,periodicity,garage_spaces,deposits,chip,national_cadastral_number,real_estate_registration,stratum,cadastral_appraisal,official_lot_area,official_built_area,audio_tours,video_presentations,dossier,type,area,bedrooms,bathrooms,location,status,is_published,lat,lng,cadastral_id,images,municipality,"ubicación",features,categories,payment,featured')
+    // Select the available row shape so the editor remains reachable while a
+    // database migration is pending. Optional fields default below.
+    supabase.from("properties").select("*")
       .eq("id", id).maybeSingle(),
     supabase.from("property_types").select("id,label").order("sort_order"),
   ]);
-  if (error || !data) notFound();
+  if (error) return <section className="admin-error" role="alert"><h1>No se pudo cargar este inmueble</h1><p>El panel encontró un problema al consultar Supabase. Revisa que este entorno tenga aplicadas las migraciones y las variables de conexión.</p><small>{error.message}</small></section>;
+  if (!data) notFound();
   const lowerStatus = data.status.toLocaleLowerCase("es");
   const status: PropertyFormData["status"] = !data.is_published ? "Oculto" : lowerStatus.includes("vendido") ? "Vendido" : lowerStatus.includes("arriendo") ? "En arriendo" : "Disponible";
   const initialData: PropertyFormData = {
@@ -45,6 +48,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     video_presentations: (data.video_presentations || []) as PropertyFormData["video_presentations"],
     dossier: (data.dossier || {}) as PropertyFormData["dossier"],
     municipality: data.municipality || "",
+    municipality_code: data.municipality_code || "",
     department: data["ubicación"] || "",
     features: (data.features || []) as string[],
     categories: (data.categories || ["Buy"]) as PropertyFormData["categories"],

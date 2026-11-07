@@ -3,7 +3,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { NextResponse } from "next/server";
 import ValuationReportDocument from "@/lib/pdf/ValuationReportDocument";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { addReportImage, getGovernmentReportData } from "@/lib/pdf/governmentData";
+import { addReportImage, CadastralValidationError, getGovernmentReportData } from "@/lib/pdf/governmentData";
 import type { CadastralProperty } from "@/lib/pdf/types";
 import type { CadastralReportData } from "@/lib/pdf/types";
 
@@ -18,6 +18,7 @@ function cadastralProperty(databaseRow: Record<string, unknown>): CadastralPrope
     description: typeof databaseRow.description === "string" ? databaseRow.description : null,
     price: Number(databaseRow.price) || 0, area: Number(databaseRow.area) || 0, type: String(databaseRow.type || "Inmueble"),
     location: String(databaseRow.location || "Ubicación no registrada"), municipality: typeof databaseRow.municipality === "string" ? databaseRow.municipality : null,
+    municipality_code: typeof databaseRow.municipality_code === "string" ? databaseRow.municipality_code : null,
     department: typeof databaseRow.department === "string" ? databaseRow.department : typeof databaseRow["ubicación"] === "string" ? databaseRow["ubicación"] as string : null,
     cadastral_id: typeof databaseRow.national_cadastral_number === "string" ? databaseRow.national_cadastral_number : typeof databaseRow.cadastral_id === "string" ? databaseRow.cadastral_id : null,
     chip: typeof databaseRow.chip === "string" ? databaseRow.chip : null,
@@ -85,7 +86,8 @@ export async function POST(request: Request) {
     return await renderReport(property, supabase, simulation, { name, whatsapp: phone });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo generar el informe técnico.";
-    return NextResponse.json({ error: message }, { status: message.includes("No se encontró") ? 404 : 503 });
+    const status = error instanceof CadastralValidationError ? 422 : message.includes("No se encontró") ? 404 : 503;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
@@ -125,6 +127,7 @@ export async function GET(request: Request) {
     return await renderReport(property, supabase, null, null);
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo generar el informe predial.";
-    return NextResponse.json({ error: message }, { status: message.includes("No se encontró") ? 404 : 503 });
+    const status = error instanceof CadastralValidationError ? 422 : message.includes("No se encontró") ? 404 : 503;
+    return NextResponse.json({ error: message }, { status });
   }
 }

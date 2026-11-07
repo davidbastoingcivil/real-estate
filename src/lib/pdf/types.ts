@@ -8,6 +8,7 @@ export type CadastralProperty = {
   type: string;
   location: string;
   municipality: string | null;
+  municipality_code?: string | null;
   department: string | null;
   cadastral_id: string | null;
   chip?: string | null;
@@ -39,6 +40,9 @@ export type CadastralReportData = {
     id: number;
     title: string;
     address: string;
+    description: string | null;
+    price: number;
+    municipalityCode: string | null;
     type: string;
     listedAreaM2: number;
     bedrooms: number;
@@ -50,6 +54,7 @@ export type CadastralReportData = {
     deposits: number;
     dossierSections: Array<{ title: string; description?: string; items?: string[] }>;
     mainImageBase64: Buffer | null;
+    galleryImagesBase64: Buffer[];
     staticMapBase64: string | null;
   };
   officialData: {
@@ -73,12 +78,16 @@ export type CadastralReportData = {
   };
   geoSpatialContext: {
     poiSearchRadiusUsed: number;
+    poiAvailable: boolean;
+    poiStatus: string;
     potNormative: { landUse: string; maxHeight: string; treatment: string };
     poiCounts: { transport: number; commercial: number; health: number; education: number; parks: number };
     poiCells: Array<{ lat: number; lng: number; count: number }>;
     poiSource: "OpenStreetMap" | "No disponible";
     poiFetchedAt: string | null;
     dane: {
+      censusAvailable: boolean;
+      ipmAvailable: boolean;
       asOf: string | null;
       censusYear: number | null;
       population: number | null;

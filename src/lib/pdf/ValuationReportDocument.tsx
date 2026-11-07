@@ -39,6 +39,9 @@ const styles = StyleSheet.create({
   reportMetricValue: { color: forest, fontSize: 9, fontFamily: "Helvetica-Bold", marginBottom: 4 },
   reportMetricNote: { color: "#39714f", fontSize: 6 },
   reportSectionTitle: { color: forest, fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 0.6, borderBottomWidth: 1, borderBottomColor: line, paddingBottom: 5, marginTop: 5, marginBottom: 7 },
+  financeSectionTitle: { color: "#f0d58d", fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 0.6, borderBottomWidth: 1, borderBottomColor: "#465348", paddingBottom: 5, marginTop: 5, marginBottom: 7 },
+  reportGallery: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  reportGalleryImage: { width: "32%", height: 55, objectFit: "cover", borderRadius: 3 },
   reportTable: { marginBottom: 8 },
   reportTableHead: { backgroundColor: "#eef1f3", borderBottomColor: "#cbd2d8", paddingVertical: 6 },
   reportRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e8ebed", paddingVertical: 6, paddingHorizontal: 5 },
@@ -89,7 +92,17 @@ const styles = StyleSheet.create({
   legal: { fontSize: 8, lineHeight: 1.55, color: muted, marginBottom: 8 },
   footer: { position: "absolute", bottom: 25, left: 46, right: 46, borderTopWidth: 1, borderTopColor: line, paddingTop: 8, flexDirection: "row", justifyContent: "space-between", color: muted, fontSize: 7 },
   coverFooter: { position: "absolute", bottom: 25, left: 48, right: 48, borderTopWidth: 1, borderTopColor: gold, paddingTop: 8, flexDirection: "row", justifyContent: "space-between", color: "#c6d0cb", fontSize: 7 },
-  finance: { backgroundColor: forest, paddingTop: 44, paddingHorizontal: 45, paddingBottom: 50, fontFamily: "Helvetica", color: "#fff" },
+  finance: { backgroundColor: forest, paddingTop: 42, paddingHorizontal: 42, paddingBottom: 50, fontFamily: "Helvetica", color: "#fff" },
+  financeTableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#39483d", paddingVertical: 5, paddingHorizontal: 5 },
+  financeTableCell: { width: "34%", color: "#f3f4f1", fontSize: 6.3, lineHeight: 1.2, paddingRight: 5, flexShrink: 1 },
+  financeTableLabel: { width: "29%", color: "#efd38e", fontFamily: "Helvetica-Bold" },
+  financeTableDetail: { color: "#b8c2ba" },
+  financeTableHead: { backgroundColor: "#24372c", borderBottomColor: gold },
+  financeReportHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: gold, paddingBottom: 7, marginBottom: 13 },
+  financeBrandMark: { backgroundColor: gold, color: forest, padding: 5, fontSize: 11, fontFamily: "Helvetica-Bold" },
+  financeBrandName: { color: "#fff", fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 0.5 },
+  financeBrandSub: { color: "#e2c77f", fontSize: 6.5, letterSpacing: 0.8, marginTop: 2 },
+  financeHeaderMeta: { color: "#c6d0cb", fontSize: 6.5, textAlign: "right" },
   financeTitle: { fontSize: 24, marginBottom: 8, color: "#fff" },
   financeIntro: { fontSize: 8, color: "#c6d0cb", lineHeight: 1.5, marginBottom: 20 },
   financeHero: { backgroundColor: "#1a3429", borderLeftWidth: 3, borderLeftColor: gold, padding: 15, marginBottom: 14 },
@@ -159,29 +172,30 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
     <View style={styles.section}>
         <Text style={styles.sectionTitle}>PUNTOS DE INTERÉS · RADIO DE {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} M</Text>
       <View style={styles.facts}>
-        <Fact label="TRANSPORTE" value={String(poiCounts.transport)}/>
-        <Fact label="EDUCACIÓN" value={String(poiCounts.education)}/>
-        <Fact label="COMERCIO" value={String(poiCounts.commercial)}/>
-        <Fact label="SALUD" value={String(poiCounts.health)}/>
-        <Fact label="PARQUES Y RECREACIÓN" value={String(poiCounts.parks)}/>
+        <Fact label="TRANSPORTE" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.transport) : "En validación territorial"}/>
+        <Fact label="EDUCACIÓN" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.education) : "En validación territorial"}/>
+        <Fact label="COMERCIO" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.commercial) : "En validación territorial"}/>
+        <Fact label="SALUD" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.health) : "En validación territorial"}/>
+        <Fact label="PARQUES Y RECREACIÓN" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.parks) : "En validación territorial"}/>
       </View>
       <Text style={styles.sourceNote}>Fuente: {data.geoSpatialContext.poiSource}. Los puntos se consultan al generar el informe y no se escriben en Supabase. Los datos de OpenStreetMap pueden estar incompletos y se distribuyen bajo ODbL.{data.geoSpatialContext.poiFetchedAt ? ` Consulta: ${dateLabel(data.geoSpatialContext.poiFetchedAt)}.` : ""}</Text>
     </View>
   </>;
 }
 
-function ReportTableRow({ label, value, detail = "" }: { label: string; value: string; detail?: string }) {
-  return <View style={styles.reportRow}>
-    <Text style={[styles.reportCell, styles.reportLabel]}>{label}</Text>
-    <Text style={styles.reportCell}>{value || "Sin dato"}</Text>
-    <Text style={[styles.reportCell, styles.reportDetail]}>{detail || "Sin dato disponible"}</Text>
+function ReportTableRow({ label, value, detail = "", darkMode = false }: { label: string; value: string; detail?: string; darkMode?: boolean }) {
+  const cellStyle = darkMode ? styles.financeTableCell : styles.reportCell;
+  return <View style={darkMode ? styles.financeTableRow : styles.reportRow}>
+    <Text style={[cellStyle, darkMode ? styles.financeTableLabel : styles.reportLabel]}>{label}</Text>
+    <Text style={cellStyle}>{value || "Sin dato"}</Text>
+    <Text style={[cellStyle, darkMode ? styles.financeTableDetail : styles.reportDetail]}>{detail || "Sin dato disponible"}</Text>
   </View>;
 }
 
-function ReportHeader({ section, data }: { section: string; data: CadastralReportData }) {
-  return <View style={styles.reportHeader}>
-    <View style={styles.reportBrand}><Text style={styles.reportBrandMark}>DB</Text><View><Text style={styles.reportBrandName}>DAVID BASTO REAL ESTATE</Text><Text style={styles.reportBrandSub}>{section}</Text></View></View>
-    <View style={styles.reportHeaderMeta}><Text>{data.metadata.reportId}</Text><Text>{dateLabel(data.metadata.issueDate)}</Text></View>
+function ReportHeader({ section, data, darkMode = false }: { section: string; data: CadastralReportData; darkMode?: boolean }) {
+  return <View style={darkMode ? styles.financeReportHeader : styles.reportHeader}>
+    <View style={styles.reportBrand}><Text style={darkMode ? styles.financeBrandMark : styles.reportBrandMark}>DB</Text><View><Text style={darkMode ? styles.financeBrandName : styles.reportBrandName}>DAVID BASTO REAL ESTATE</Text><Text style={darkMode ? styles.financeBrandSub : styles.reportBrandSub}>{section}</Text></View></View>
+    <View style={darkMode ? styles.financeHeaderMeta : styles.reportHeaderMeta}><Text>{data.metadata.reportId}</Text><Text>{dateLabel(data.metadata.issueDate)}</Text></View>
   </View>;
 }
 
@@ -199,6 +213,8 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
       <Text style={styles.coverTitle}>Estudio Catastral,{"\n"}Territorial y Plan{"\n"}de Inversión</Text>
       <Text style={styles.coverAddress}>{property.title} · {data.officialData.municipality || property.address}</Text>
       <View style={styles.coverIdentity}>
+        <View style={styles.coverIdentityCell}><Text style={styles.coverMetaLabel}>VALOR DEL INMUEBLE</Text><Text style={styles.coverMetaValue}>{cop(property.price)}</Text></View>
+        <View style={styles.coverIdentityCell}><Text style={styles.coverMetaLabel}>MUNICIPIO · DIVIPOLA</Text><Text style={styles.coverMetaValue}>{data.officialData.municipality || property.address} · {property.municipalityCode || "Sin validar"}</Text></View>
         <View style={styles.coverIdentityCell}><Text style={styles.coverMetaLabel}>CÓDIGO DE INFORME</Text><Text style={styles.coverMetaValue}>{data.metadata.reportId}</Text></View>
         <View style={styles.coverIdentityCell}><Text style={styles.coverMetaLabel}>FECHA DE EMISIÓN</Text><Text style={styles.coverMetaValue}>{dateLabel(data.metadata.issueDate)}</Text></View>
         <View style={styles.coverIdentityCell}><Text style={styles.coverMetaLabel}>CHIP CATASTRAL</Text><Text style={styles.coverMetaValue}>{property.legal.chip}</Text></View>
@@ -208,13 +224,39 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
       <View style={styles.coverFooter}><Text>Preparado por: David Basto · Ing. Civil · Asesor Inmobiliario</Text><Text>Consultoría Inmobiliaria e Inteligencia Territorial</Text></View>
     </Page>
 
+    <Page size="A4" style={styles.finance}>
+      <ReportHeader section="ANÁLISIS DE INVERSIÓN Y CORRIDA FINANCIERA" data={data} darkMode/>
+      {simulation ? <>
+        <View style={styles.reportMetrics}>
+          {[[`CUOTA INICIAL (${simulation.downPaymentPercent.toFixed(0)}%)`,money(simulation.downPaymentValue),"Recursos propios"],["CAPITAL FINANCIADO",money(simulation.financedCapital),"Saldo proyectado"],["CUOTA MENSUAL ESTIMADA",money(simulation.monthlyPayment),`Tasa E.A. ${simulation.annualEffectiveRate.toFixed(2)}%`],["FLUJO MENSUAL ESTIMADO",money(simulation.monthlyCashFlow),simulation.estimatedRent > 0 ? "Después de cuota de crédito" : "Sin ingreso de arriendo"]].map(([label,value,note],index)=><View key={label} style={styles.reportMetric}><Text style={styles.reportMetricLabel}>{label}</Text><Text style={[styles.reportMetricValue,index===3?{color:monthlyCashColor}:{}]}>{value}</Text><Text style={styles.reportMetricNote}>{note}</Text></View>)}
+        </View>
+        <Text style={styles.financeSectionTitle}>01 · CÁLCULOS EJECUTADOS EN LA CALCULADORA DE INVERSIÓN</Text>
+        <View style={styles.financeTable}>
+          <View style={[styles.financeTableRow,styles.financeTableHead]}><Text style={[styles.financeTableCell,styles.financeTableLabel]}>VARIABLE DEL ANÁLISIS</Text><Text style={styles.financeTableCell}>VALOR / PORCENTAJE CALCULADO</Text><Text style={styles.financeTableCell}>DETALLE FINANCIERO</Text></View>
+          <ReportTableRow label="Valor del inmueble" value={money(simulation.propertyValue)} detail="Precio registrado en el catálogo al generar el informe" darkMode/>
+          <ReportTableRow label="Porcentaje de cuota inicial" value={`${simulation.downPaymentPercent.toFixed(2)}%`} detail="Porcentaje seleccionado por el usuario" darkMode/>
+          <ReportTableRow label="Valor de cuota inicial" value={money(simulation.downPaymentValue)} detail="Valor del inmueble × porcentaje inicial" darkMode/>
+          <ReportTableRow label="Capital financiado" value={money(simulation.financedCapital)} detail="Valor del inmueble menos cuota inicial" darkMode/>
+          <ReportTableRow label="Tasa efectiva anual (E.A.)" value={`${simulation.annualEffectiveRate.toFixed(2)}% E.A.`} detail="Convertida a tasa efectiva mensual para amortización" darkMode/>
+          <ReportTableRow label="Plazo de financiación" value={`${simulation.termYears} años (${simulation.termYears * 12} meses)`} detail="Amortización estimada de cuota fija" darkMode/>
+          <ReportTableRow label="Cuota mensual del crédito" value={`${money(simulation.monthlyPayment)} / mes`} detail="Cálculo matemático, sin seguros ni cargos bancarios" darkMode/>
+          <ReportTableRow label="Arriendo mensual estimado" value={`${money(simulation.estimatedRent)} / mes`} detail="Valor ingresado por el usuario" darkMode/>
+          <ReportTableRow label="Rentabilidad bruta anual" value={`${simulation.grossAnnualYield.toFixed(2)}%`} detail="Arriendo mensual × 12 / valor del inmueble" darkMode/>
+          <ReportTableRow label="Flujo neto mensual proyectado" value={`${money(simulation.monthlyCashFlow)} / mes`} detail="Arriendo estimado menos cuota de crédito" darkMode/>
+        </View>
+        <View style={styles.callout}><Text style={styles.calloutText}>El flujo resta la cuota del crédito al arriendo estimado. No incluye administración, impuestos, seguros, mantenimiento, vacancia ni otros costos. No se agregan escenarios de renta por zona sin una fuente configurable y verificada.</Text></View>
+      </> : <View style={styles.callout}><Text style={styles.calloutText}>No se recibió una simulación. Genera el informe desde la calculadora del inmueble para incluir la corrida financiera vigente.</Text></View>}
+      <Footer data={data}/>
+    </Page>
+
     <Page size="A4" style={styles.page}>
       <ReportHeader section="FICHA TÉCNICA & CONTEXTO CATASTRAL" data={data}/>
       {property.mainImageBase64 ? <Image src={property.mainImageBase64} style={styles.reportHeroImage}/> : <View style={styles.reportHeroPlaceholder}><Text style={{color:"#fff",fontSize:12}}>{property.title}</Text><Text style={{color:"#c6d0cb",fontSize:8}}>{property.address} · Coordenadas: {property.coordinates ? `${property.coordinates.lat.toFixed(6)}, ${property.coordinates.lng.toFixed(6)}` : "Sin registrar"}</Text></View>}
+      {property.galleryImagesBase64.length > 1 && <View style={styles.reportGallery}>{property.galleryImagesBase64.slice(1).map((image, index) => <Image key={index} src={image} style={styles.reportGalleryImage}/>)}</View>}
       <View style={styles.reportMetrics}>
         {[["AVALÚO CATASTRAL",cop(data.officialData.cadastralAppraisal),"Referencia fiscal"],["ÁREA DE TERRENO",areaLabel(data.officialData.officialLotArea),"Fuente catastral"],["ÁREA CONSTRUIDA",areaLabel(data.officialData.officialBuiltArea),"Dato oficial disponible"],["MÉTODO DE CONSULTA",data.officialData.lookupMethod === "cadastral_id" ? "Número predial" : data.officialData.lookupMethod === "coordinates" ? "Coordenadas" : "Sin consulta","Identificador / punto"]].map(([label,value,note])=><View key={label} style={styles.reportMetric}><Text style={styles.reportMetricLabel}>{label}</Text><Text style={styles.reportMetricValue}>{value}</Text><Text style={styles.reportMetricNote}>{note}</Text></View>)}
       </View>
-      <Text style={styles.reportSectionTitle}>01 · IDENTIFICACIÓN PREDIAL & INFORMACIÓN CATASTRAL</Text>
+      <Text style={styles.reportSectionTitle}>02 · IDENTIFICACIÓN PREDIAL & INFORMACIÓN CATASTRAL</Text>
       <View style={styles.reportTable}>
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>PARÁMETRO PREDIAL</Text><Text style={styles.reportCell}>FICHA DEL INMUEBLE</Text><Text style={styles.reportCell}>DATO CATASTRAL / FUENTE</Text></View>
         <ReportTableRow label="Tipo / Destinación" value={property.type} detail={data.officialData.economicDestination || "No disponible"}/>
@@ -227,32 +269,9 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
         <ReportTableRow label="Baños / parqueaderos / depósitos" value={`${property.bathrooms} / ${property.garages} / ${property.deposits}`} detail="Características de la ficha"/>
         <ReportTableRow label="Municipio / Código DIVIPOLA" value={property.address} detail={`${data.officialData.municipality || "Sin dato"}${data.officialData.municipalityCode ? ` (${data.officialData.municipalityCode})` : ""}`}/>
       </View>
+      {property.description && <View style={styles.section}><Text style={styles.reportSectionTitle}>DESCRIPCIÓN DEL INMUEBLE</Text><Text style={{ color: muted, fontSize: 7.5, lineHeight: 1.35 }}>{property.description}</Text></View>}
+      {property.dossierSections.length > 0 && <View style={styles.section}><Text style={styles.reportSectionTitle}>CARACTERÍSTICAS Y DISTRIBUCIÓN</Text>{property.dossierSections.slice(0, 3).map((section, index) => <View key={`${section.title}-${index}`} style={{ marginBottom: 4 }}><Text style={{ color: forest, fontSize: 7, fontFamily: "Helvetica-Bold", marginBottom: 2 }}>{section.title}</Text>{section.description && <Text style={{ color: muted, fontSize: 6.5, lineHeight: 1.25 }}>{section.description}</Text>}{section.items?.slice(0, 4).map((item, itemIndex) => <Text key={`${index}-${itemIndex}`} style={{ color: ink, fontSize: 6.5, lineHeight: 1.2 }}>• {item}</Text>)}</View>)}</View>}
       <View style={styles.callout}><Text style={styles.calloutText}>Los datos externos se consultan al generar el informe y no se almacenan en la plataforma. El avalúo catastral es una referencia fiscal, no un avalúo comercial. Si una fuente no responde o no encuentra el predio, se indica “Sin dato”.</Text></View>
-      <Footer data={data}/>
-    </Page>
-
-    <Page size="A4" style={styles.page}>
-      <ReportHeader section="ANÁLISIS DE INVERSIÓN Y CORRIDA FINANCIERA" data={data}/>
-      {simulation ? <>
-        <View style={styles.reportMetrics}>
-          {[[`CUOTA INICIAL (${simulation.downPaymentPercent.toFixed(0)}%)`,money(simulation.downPaymentValue),"Recursos propios"],["CAPITAL FINANCIADO",money(simulation.financedCapital),"Saldo proyectado"],["CUOTA MENSUAL ESTIMADA",money(simulation.monthlyPayment),`Tasa E.A. ${simulation.annualEffectiveRate.toFixed(2)}%`],["FLUJO MENSUAL ESTIMADO",money(simulation.monthlyCashFlow),simulation.estimatedRent > 0 ? "Después de cuota de crédito" : "Sin ingreso de arriendo"]].map(([label,value,note],index)=><View key={label} style={styles.reportMetric}><Text style={styles.reportMetricLabel}>{label}</Text><Text style={[styles.reportMetricValue,index===3?{color:monthlyCashColor}:{}]}>{value}</Text><Text style={styles.reportMetricNote}>{note}</Text></View>)}
-        </View>
-        <Text style={styles.reportSectionTitle}>02 · CÁLCULOS EJECUTADOS EN LA CALCULADORA DE INVERSIÓN</Text>
-        <View style={styles.reportTable}>
-          <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>VARIABLE DEL ANÁLISIS</Text><Text style={styles.reportCell}>VALOR / PORCENTAJE CALCULADO</Text><Text style={styles.reportCell}>DETALLE FINANCIERO</Text></View>
-          <ReportTableRow label="Valor del inmueble" value={money(simulation.propertyValue)} detail="Precio registrado en el catálogo al generar el informe"/>
-          <ReportTableRow label="Porcentaje de cuota inicial" value={`${simulation.downPaymentPercent.toFixed(2)}%`} detail="Porcentaje seleccionado por el usuario"/>
-          <ReportTableRow label="Valor de cuota inicial" value={money(simulation.downPaymentValue)} detail="Valor del inmueble × porcentaje inicial"/>
-          <ReportTableRow label="Capital financiado" value={money(simulation.financedCapital)} detail="Valor del inmueble menos cuota inicial"/>
-          <ReportTableRow label="Tasa efectiva anual (E.A.)" value={`${simulation.annualEffectiveRate.toFixed(2)}% E.A.`} detail="Convertida a tasa efectiva mensual para amortización"/>
-          <ReportTableRow label="Plazo de financiación" value={`${simulation.termYears} años (${simulation.termYears * 12} meses)`} detail="Amortización estimada de cuota fija"/>
-          <ReportTableRow label="Cuota mensual del crédito" value={`${money(simulation.monthlyPayment)} / mes`} detail="Cálculo matemático, sin seguros ni cargos bancarios"/>
-          <ReportTableRow label="Arriendo mensual estimado" value={`${money(simulation.estimatedRent)} / mes`} detail="Valor ingresado por el usuario"/>
-          <ReportTableRow label="Rentabilidad bruta anual" value={`${simulation.grossAnnualYield.toFixed(2)}%`} detail="Arriendo mensual × 12 / valor del inmueble"/>
-          <ReportTableRow label="Flujo neto mensual proyectado" value={`${money(simulation.monthlyCashFlow)} / mes`} detail="Arriendo estimado menos cuota de crédito"/>
-        </View>
-        <View style={styles.callout}><Text style={styles.calloutText}>El flujo resta la cuota del crédito al arriendo estimado. No incluye administración, impuestos, seguros, mantenimiento, vacancia ni otros costos. No se agregan escenarios de renta por zona sin una fuente configurable y verificada.</Text></View>
-      </> : <View style={styles.callout}><Text style={styles.calloutText}>No se recibió una simulación. Genera el informe desde la calculadora del inmueble para incluir la corrida financiera vigente.</Text></View>}
       <Footer data={data}/>
     </Page>
 
@@ -265,17 +284,19 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>DIMENSIÓN TERRITORIAL</Text><Text style={styles.reportCell}>INDICADOR / NORMA POT</Text><Text style={styles.reportCell}>DIAGNÓSTICO / COBERTURA</Text></View>
         <ReportTableRow label="Uso de suelo (POT)" value={data.geoSpatialContext.potNormative.landUse} detail="No reemplaza concepto de autoridad municipal"/>
         <ReportTableRow label="Altura / tratamiento" value={`${data.geoSpatialContext.potNormative.maxHeight} / ${data.geoSpatialContext.potNormative.treatment}`} detail="Sin dato si no hay consulta municipal verificable"/>
-        <ReportTableRow label="Servicios y POI (1.000 m)" value={`${data.geoSpatialContext.poiCounts.commercial} puntos comerciales / ${data.geoSpatialContext.poiCounts.health} de salud`} detail={`${data.geoSpatialContext.poiSource} · movilidad ${data.geoSpatialContext.poiCounts.transport} · educación ${data.geoSpatialContext.poiCounts.education} · parques ${data.geoSpatialContext.poiCounts.parks}`}/>
+        <ReportTableRow label="Servicios y POI (1.000 m)" value={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiCounts.commercial} puntos comerciales / ${data.geoSpatialContext.poiCounts.health} de salud` : "En validación territorial"} detail={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiSource} · movilidad ${data.geoSpatialContext.poiCounts.transport} · educación ${data.geoSpatialContext.poiCounts.education} · parques ${data.geoSpatialContext.poiCounts.parks}` : data.geoSpatialContext.poiStatus}/>
         <ReportTableRow label="Riesgos / amenazas" value={`${data.predictiveAnalysis.physicalRisks.landslide} · ${data.predictiveAnalysis.physicalRisks.flooding}`} detail="Remoción en masa / inundación"/>
       </View>
       <Text style={styles.reportSectionTitle}>04 · PERFIL MUNICIPAL DANE Y COBERTURA</Text>
       <View style={styles.reportTable}>
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>INDICADOR DANE</Text><Text style={styles.reportCell}>VALOR REGISTRADO</Text><Text style={styles.reportCell}>CAPA / COBERTURA</Text></View>
-        <ReportTableRow label="Población / hogares" value={`${data.geoSpatialContext.dane.population?.toLocaleString("es-CO") || "Sin dato"} / ${data.geoSpatialContext.dane.households?.toLocaleString("es-CO") || "Sin dato"}`} detail="Agregado municipal"/>
-        <ReportTableRow label="Viviendas / año censal" value={`${data.geoSpatialContext.dane.dwellings?.toLocaleString("es-CO") || "Sin dato"} / ${data.geoSpatialContext.dane.censusYear || "Sin dato"}`} detail="DANE"/>
-        <ReportTableRow label="IPM municipal" value={data.geoSpatialContext.dane.ipm === null ? "Sin dato" : `${data.geoSpatialContext.dane.ipm.toLocaleString("es-CO")}%`} detail="No corresponde a una medición individual del inmueble"/>
+        <ReportTableRow label="Población / hogares" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.population?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.households?.toLocaleString("es-CO") ?? "Sin dato en fuente"}` : "En validación territorial"} detail="Agregado municipal · DANE"/>
+        <ReportTableRow label="Viviendas / año censal" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.dwellings?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.censusYear ?? "Sin dato en fuente"}` : "En validación territorial"} detail="DANE"/>
+        <ReportTableRow label="IPM municipal" value={!data.geoSpatialContext.dane.ipmAvailable ? "En validación territorial" : data.geoSpatialContext.dane.ipm === null ? "Sin dato en fuente" : `${data.geoSpatialContext.dane.ipm.toLocaleString("es-CO")}%`} detail="No corresponde a una medición individual del inmueble"/>
         <ReportTableRow label="Catalizadores de valorización" value={data.predictiveAnalysis.capitalGainCatalysts.length ? `${data.predictiveAnalysis.capitalGainCatalysts.length} identificados` : "Sin proyectos verificables"} detail="Fuentes disponibles al generar"/>
       </View>
+      <Text style={styles.sourceNote}>Trazabilidad: catastro consultado mediante {data.officialData.servedFrom || data.officialData.lookupMethod};{data.officialData.checkedAt ? ` fecha ${dateLabel(data.officialData.checkedAt)};` : " sin fecha confirmada por la fuente;"} estadísticas DANE{data.geoSpatialContext.dane.asOf ? ` con corte ${dateLabel(data.geoSpatialContext.dane.asOf)}` : " sin fecha de corte disponible"}. Precio mostrado: valor de oferta registrado en la plataforma, no avalúo comercial.</Text>
+      {data.warnings.length > 0 && <View style={[styles.callout, { marginTop: 6, marginBottom: 6 }]}><Text style={styles.calloutText}>VALIDACIONES Y FUENTES PENDIENTES: {data.warnings.slice(0, 3).join(" ")}</Text></View>}
       <View style={styles.callout}><Text style={styles.calloutText}>Alcance: informe técnico-comercial automático basado en la ficha del inmueble y fuentes públicas disponibles. No sustituye visita pericial, certificado de tradición, avalúo comercial ni concepto de norma urbana oficial. La geometría y los datos territoriales son referenciales; pueden variar según cobertura y fecha de consulta.</Text></View>
       <View style={styles.reportContact}><Text style={styles.reportContactTitle}>DAVID BASTO · ING. CIVIL · ASESOR INMOBILIARIO</Text><Text style={styles.reportContactText}>Atención personalizada · WhatsApp +57 312 537 2457 · Propiedades con propósito</Text></View>
       <Footer data={data}/>

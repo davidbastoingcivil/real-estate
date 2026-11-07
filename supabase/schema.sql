@@ -34,6 +34,7 @@ create table if not exists public.properties (
   periodicity text not null default 'Único',
   location text not null default '',
   municipality text not null default '',
+  municipality_code varchar(5),
   "ubicación" text not null default '',
   lat numeric(10,7) not null default 0,
   lng numeric(10,7) not null default 0,
@@ -68,6 +69,7 @@ create table if not exists public.properties (
 
 alter table public.properties
   add column if not exists municipality text not null default '',
+  add column if not exists municipality_code varchar(5),
   add column if not exists "ubicación" text not null default '',
   add column if not exists categories text[] not null default '{}',
   add column if not exists payment text[] not null default '{}',
