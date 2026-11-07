@@ -30,6 +30,8 @@ create table if not exists public.properties (
   slug text not null unique,
   description text not null default '',
   price numeric(16,2) not null default 0,
+  property_code text,
+  periodicity text not null default 'Único',
   location text not null default '',
   municipality text not null default '',
   "ubicación" text not null default '',
@@ -37,6 +39,16 @@ create table if not exists public.properties (
   lng numeric(10,7) not null default 0,
   bedrooms integer not null default 0,
   bathrooms integer not null default 0,
+  garage_spaces integer not null default 0,
+  deposits integer not null default 0,
+  cadastral_id varchar(50),
+  chip varchar(40),
+  national_cadastral_number varchar(30),
+  real_estate_registration varchar(40),
+  stratum smallint,
+  cadastral_appraisal numeric(16,2),
+  official_lot_area numeric(10,2),
+  official_built_area numeric(10,2),
   area numeric(10,2) not null default 0,
   type text not null,
   category_id text not null references public.property_types(id) on update cascade on delete restrict,
@@ -46,6 +58,9 @@ create table if not exists public.properties (
   categories text[] not null default '{}',
   payment text[] not null default '{}',
   featured boolean not null default false,
+  audio_tours jsonb not null default '[]'::jsonb,
+  video_presentations jsonb not null default '[]'::jsonb,
+  dossier jsonb not null default '{}'::jsonb,
   is_published boolean not null default true,
   updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
@@ -56,6 +71,21 @@ alter table public.properties
   add column if not exists "ubicación" text not null default '',
   add column if not exists categories text[] not null default '{}',
   add column if not exists payment text[] not null default '{}',
+  add column if not exists property_code text,
+  add column if not exists periodicity text not null default 'Único',
+  add column if not exists garage_spaces integer not null default 0,
+  add column if not exists deposits integer not null default 0,
+  add column if not exists cadastral_id varchar(50),
+  add column if not exists chip varchar(40),
+  add column if not exists national_cadastral_number varchar(30),
+  add column if not exists real_estate_registration varchar(40),
+  add column if not exists stratum smallint,
+  add column if not exists cadastral_appraisal numeric(16,2),
+  add column if not exists official_lot_area numeric(10,2),
+  add column if not exists official_built_area numeric(10,2),
+  add column if not exists audio_tours jsonb not null default '[]'::jsonb,
+  add column if not exists video_presentations jsonb not null default '[]'::jsonb,
+  add column if not exists dossier jsonb not null default '{}'::jsonb,
   add column if not exists featured boolean not null default false,
   add column if not exists is_published boolean not null default true,
   add column if not exists updated_at timestamptz not null default now(),
@@ -101,6 +131,7 @@ where lower(p.type) = lower(pt.label);
 alter table public.properties alter column category_id set not null;
 create index if not exists properties_category_id_idx on public.properties(category_id);
 create index if not exists properties_published_updated_idx on public.properties(is_published, updated_at desc);
+create unique index if not exists properties_property_code_unique on public.properties(property_code) where property_code is not null and property_code <> '';
 create unique index if not exists properties_single_featured_idx on public.properties(featured) where featured;
 
 create or replace function public.sync_property_category_id()
@@ -224,7 +255,7 @@ create policy "Admins can edit brand settings" on public.site_settings
   with check (exists (select 1 from public.admin_users where user_id = (select auth.uid())));
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('property-images', 'property-images', true, 10485760, array['image/jpeg','image/png','image/webp','image/avif'])
+values ('property-images', 'property-images', true, 52428800, array['image/jpeg','image/png','image/webp','image/avif','image/gif','video/mp4','video/webm','video/quicktime','audio/mpeg','audio/mp3'])
 on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "Property photos can be viewed publicly" on storage.objects;

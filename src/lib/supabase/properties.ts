@@ -2,10 +2,12 @@ import type { Property } from "@/data/properties";
 
 export type PropertyDatabaseRow = {
   id: number;
+  property_code?: string | null;
   title: string;
   slug: string;
   description: string | null;
   price: number | string;
+  periodicity?: string | null;
   location: string;
   municipality: string;
   "ubicación": string;
@@ -13,6 +15,7 @@ export type PropertyDatabaseRow = {
   lng: number | string;
   bedrooms: number;
   bathrooms: number;
+  garage_spaces?: number | null;
   area: number | string;
   type: Property["type"];
   status: string;
@@ -24,6 +27,9 @@ export type PropertyDatabaseRow = {
   is_published: boolean;
   updated_at: string;
   category_id: string;
+  audio_tours?: Property["audioTours"] | null;
+  video_presentations?: Property["videoPresentations"] | null;
+  dossier?: Property["dossier"] | null;
 };
 
 export function propertyFromDatabase(row: PropertyDatabaseRow): Property {
@@ -41,18 +47,21 @@ export function propertyFromDatabase(row: PropertyDatabaseRow): Property {
   return {
     id: row.slug,
     databaseId: row.id,
+    code: row.property_code || `DBRE-${String(row.id).padStart(5, "0")}`,
     slug: row.slug,
     name: row.title,
     location: row.location,
     municipality: row.municipality || fallbackMunicipality,
     department: row["ubicación"] || fallbackDepartment,
     price: Number(row.price),
+    periodicity: row.periodicity === "Mensual" ? "Mensual" : "Único",
     area: Number(row.area),
     type: row.type,
     status,
     categories,
     bedrooms: Number(row.bedrooms || 0),
     bathrooms: Number(row.bathrooms || 0),
+    garages: Number(row.garage_spaces || 0),
     image: cover,
     gallery,
     description: row.description || "",
@@ -61,6 +70,9 @@ export function propertyFromDatabase(row: PropertyDatabaseRow): Property {
     featured: Boolean(row.featured),
     amenities: row.features || [],
     payment: row.payment || [],
+    audioTours: Array.isArray(row.audio_tours) ? row.audio_tours : [],
+    videoPresentations: Array.isArray(row.video_presentations) ? row.video_presentations : [],
+    dossier: row.dossier || undefined,
   };
 }
 
@@ -70,6 +82,8 @@ export function propertyToDatabase(property: Property, isPublished: boolean) {
     slug: property.slug,
     description: property.description,
     price: property.price,
+    property_code: property.code || null,
+    periodicity: property.periodicity || "Único",
     location: property.location,
     municipality: property.municipality,
     ["ubicación"]: property.department,
@@ -78,6 +92,7 @@ export function propertyToDatabase(property: Property, isPublished: boolean) {
     lng: property.lng,
     bedrooms: property.bedrooms,
     bathrooms: property.bathrooms,
+    garage_spaces: property.garages || 0,
     area: property.area,
     type: property.type,
     status: property.status === "En arriendo" ? "En Arriendo" : property.status === "Vendido" ? "Vendido" : "En Venta",
@@ -85,6 +100,9 @@ export function propertyToDatabase(property: Property, isPublished: boolean) {
     features: property.amenities,
     categories: property.categories,
     payment: property.payment,
+    audio_tours: property.audioTours || [],
+    video_presentations: property.videoPresentations || [],
+    dossier: property.dossier || {},
     featured: Boolean(property.featured),
     is_published: isPublished,
     updated_at: new Date().toISOString(),

@@ -19,7 +19,7 @@ INSERT INTO public.properties (
   'Condominio Bambú - Casa Moderna',
   'condominio-bambu-carmen-de-apicala',
   'Espectacular casa campestre de diseño moderno con 144 m² más terraza, clima cálido todo el año, piscina privada en el condominio y alta valorización.',
-  340000000,
+  390000000,
   'Carmen de Apicalá, Tolima',
   4.2045, -74.7297,
   3, 2, 144,

@@ -15,12 +15,12 @@ export const defaultBrandSettings: BrandSettings = {
   contactName: "David Basto", contactRole: "Ing. Civil · Asesor inmobiliario", phone: "+57 312 537 2457", whatsappPhone: "573125372457",
   colors: { forest: "#10251b", gold: "#b99a5d", ink: "#171a17", paper: "#f8f7f3" },
 };
-type SearchFilters = { query: string; category: string; type: string; minPrice: number; maxPrice: number; bedrooms: number; bathrooms: number; minArea: number };
+export type SearchFilters = { query: string; codeQuery: string; category: string; type: string; minPrice: number; maxPrice: number; bedrooms: number; bathrooms: number; minArea: number; maxArea: number; sortBy: "recommended" | "price-asc" | "price-desc" | "area-desc" };
 type AppContextValue = { filters: SearchFilters; setFilters: (next: Partial<SearchFilters>) => void; visibleProperties: Property[]; allProperties: Property[]; contentLoaded: boolean; favorites: string[]; toggleFavorite: (id: string) => void; settings: BrandSettings; reloadContent: () => Promise<void>; setSettings: (settings: BrandSettings) => void };
-const defaults: SearchFilters = { query: "", category: "Todas", type: "Todos", minPrice: 0, maxPrice: 1500000000, bedrooms: 0, bathrooms: 0, minArea: 0 };
+export const defaultSearchFilters: SearchFilters = { query: "", codeQuery: "", category: "Todas", type: "Todos", minPrice: 0, maxPrice: 1500000000, bedrooms: 0, bathrooms: 0, minArea: 0, maxArea: 1000, sortBy: "recommended" };
 const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [filters, update] = useState(defaults);
+  const [filters, update] = useState(defaultSearchFilters);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [allProperties, setAllProperties] = useState(properties);
   const [settings, setSettings] = useState(defaultBrandSettings);
@@ -55,9 +55,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [settings]);
   const visibleProperties = useMemo(() => allProperties.filter(p => {
     const q = filters.query.trim().toLowerCase();
-    const searchable = `${p.name} ${p.location} ${p.municipality} ${p.department}`.toLowerCase();
+    const code = filters.codeQuery.trim().toLowerCase();
+    const searchable = `${p.name} ${p.code || ""} ${p.databaseId || ""} ${p.slug} ${p.location} ${p.municipality} ${p.department}`.toLowerCase();
     const categoryMatch = filters.category === "Todas" || filters.category === "Warm" && ["Carmen de Apicalá", "Ricaurte"].includes(p.municipality) || p.categories?.includes(filters.category as "Buy" | "Rent" | "Projects" | "Commercial");
-    return (!q || searchable.includes(q)) && categoryMatch && (filters.type === "Todos" || p.type === filters.type) && p.price >= filters.minPrice && p.price <= filters.maxPrice && p.bedrooms >= filters.bedrooms && p.bathrooms >= filters.bathrooms && p.area >= filters.minArea;
+    return (!q || searchable.includes(q)) && (!code || `${p.code || ""} ${p.databaseId || ""}`.toLowerCase().includes(code)) && categoryMatch && (filters.type === "Todos" || p.type === filters.type) && p.price >= filters.minPrice && p.price <= filters.maxPrice && p.bedrooms >= filters.bedrooms && p.bathrooms >= filters.bathrooms && p.area >= filters.minArea && p.area <= filters.maxArea;
+  }).sort((a, b) => {
+    if (filters.sortBy === "price-asc") return a.price - b.price;
+    if (filters.sortBy === "price-desc") return b.price - a.price;
+    if (filters.sortBy === "area-desc") return b.area - a.area;
+    return Number(Boolean(b.featured)) - Number(Boolean(a.featured));
   }), [filters, allProperties]);
   return <AppContext.Provider value={{ filters, setFilters, visibleProperties, allProperties, contentLoaded, favorites, toggleFavorite, settings, reloadContent, setSettings }}>{children}</AppContext.Provider>;
 }

@@ -219,7 +219,9 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   const found = typeof cadastralLookup.payload?.found === "boolean" ? cadastralLookup.payload.found : null;
   const mapBase64 = await buildStaticMap(property, livePois?.topPoints || []);
   if (coordinatesValid && !mapBase64) warnings.push("El mapa satelital no está disponible; las demás secciones del informe se generaron normalmente.");
-  const cadastralNumber = typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number : null;
+  const reportedCadastralNumber = typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number.replace(/\D/g, "") : "";
+  const cadastralNumber = /^\d{30}$/.test(reportedCadastralNumber) ? reportedCadastralNumber : null;
+  if (officialProperty?.cadastral_number && !cadastralNumber) warnings.push("La fuente devolvió un Número Predial Nacional con formato distinto de 30 dígitos; se omitió del informe.");
   const data: CadastralReportData = {
     metadata: {
       reportId: `DB-${property.id}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
@@ -237,7 +239,16 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       bedrooms: property.bedrooms,
       bathrooms: property.bathrooms,
       coordinates: coordinatesValid ? { lat: property.lat, lng: property.lng } : null,
-      legal: { cadastralId: property.cadastral_id || cadastralNumber || "No registrado", realEstateId: "No registrado" },
+      legal: {
+        cadastralId: property.cadastral_id || "No registrado",
+        chip: property.chip || "No registrado",
+        nationalCadastralNumber: property.national_cadastral_number || cadastralNumber || "No disponible",
+        realEstateId: property.real_estate_registration || "No registrado",
+      },
+      stratum: property.stratum !== null && property.stratum !== undefined ? `Estrato ${property.stratum}` : "No registrado",
+      garages: Number(property.garage_spaces || 0),
+      deposits: Number(property.deposits || 0),
+      dossierSections: property.dossier?.sections || [],
       mainImageBase64: null,
       staticMapBase64: mapBase64,
     },
@@ -245,9 +256,9 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       recordFound: found,
       lookupMethod: cadastralLookup.method,
       cadastralNumber,
-      cadastralAppraisal: numberOrNull(officialProperty?.appraisal),
-      officialBuiltArea: numberOrNull(officialProperty?.built_area_m2),
-      officialLotArea: numberOrNull(officialProperty?.land_area_m2),
+      cadastralAppraisal: numberOrNull(property.cadastral_appraisal) ?? numberOrNull(officialProperty?.appraisal),
+      officialBuiltArea: numberOrNull(property.official_built_area) ?? numberOrNull(officialProperty?.built_area_m2),
+      officialLotArea: numberOrNull(property.official_lot_area) ?? numberOrNull(officialProperty?.land_area_m2),
       economicDestination: typeof officialProperty?.economic_destination === "string" ? officialProperty.economic_destination : null,
       stratum: "Sin dato",
       municipality,
@@ -283,6 +294,8 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       },
     },
     warnings,
+    client: null,
+    financialSimulation: null,
     predictiveAnalysis: {
       physicalRisks: { landslide: "No disponible en las fuentes consultadas", flooding: "No disponible en las fuentes consultadas" },
       capitalGainCatalysts: [],

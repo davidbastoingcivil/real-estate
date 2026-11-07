@@ -19,6 +19,7 @@ export default function LeadForm({ propertyId }: { propertyId?: number }) {
         phone_number: String(data.get("phone") || ""),
         interested_property_id: propertyId,
         website: String(data.get("website") || ""),
+        consent_accepted: data.get("consent") === "on",
       });
       if (result.success) {
         form.reset();
@@ -37,7 +38,7 @@ export default function LeadForm({ propertyId }: { propertyId?: number }) {
       <label className="lead-honeypot" aria-hidden="true">Website<input name="website" tabIndex={-1} autoComplete="off"/></label>
       <button className="button button-outline" type="submit" disabled={busy}>{busy ? <LoaderCircle size={15} className="spin"/> : <ArrowUpRight size={15}/>} {busy ? "Enviando…" : "Solicitar información"}</button>
       {message && <p role={success ? "status" : "alert"} className={success ? "lead-feedback success" : "lead-feedback error"}>{message}</p>}
-      <small>Al enviar aceptas que usemos estos datos para responder tu solicitud.</small>
+      <label className="lead-consent"><input name="consent" type="checkbox" required/><span>Acepto que usemos estos datos para responder a esta solicitud sobre el inmueble. No enviaremos mensajes si no lo autorizas.</span></label>
     </form>
   </section>;
 }

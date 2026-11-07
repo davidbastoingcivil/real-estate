@@ -2,20 +2,32 @@
 
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { AudioTour, ProjectDossier, VideoPresentation } from "@/data/properties";
 
 export type PropertyInput = {
   title: string;
   description: string;
   price: number;
+  property_code: string;
+  periodicity: "Único" | "Mensual";
   type: string;
   area_sqm: number;
   bedrooms: number;
   bathrooms: number;
+  garage_spaces: number;
   location_text: string;
   status: "Disponible" | "En arriendo" | "Vendido" | "Oculto";
   lat: number;
   lng: number;
   cadastral_id: string;
+  chip: string;
+  national_cadastral_number: string;
+  real_estate_registration: string;
+  stratum: number | null;
+  cadastral_appraisal: number | null;
+  official_lot_area: number | null;
+  official_built_area: number | null;
+  deposits: number;
   municipality: string;
   department: string;
   features: string[];
@@ -23,6 +35,9 @@ export type PropertyInput = {
   payment: string[];
   featured: boolean;
   images: string[];
+  audio_tours: AudioTour[];
+  video_presentations: VideoPresentation[];
+  dossier: ProjectDossier;
 };
 
 type ActionResult = { success: true } | { success: false; error: string };
@@ -56,8 +71,16 @@ function validate(data: PropertyInput) {
   if (data.cadastral_id.length > 50 || /[^a-zA-Z0-9 .-]/.test(data.cadastral_id)) {
     throw new Error("La cédula catastral debe tener máximo 50 caracteres alfanuméricos, puntos o guiones.");
   }
-  if (data.bedrooms < 0 || data.bathrooms < 0 || !Number.isInteger(data.bedrooms) || !Number.isInteger(data.bathrooms)) {
+  if (data.chip.length > 40 || /[^a-zA-Z0-9 .-]/.test(data.chip)) throw new Error("El CHIP debe tener máximo 40 caracteres alfanuméricos.");
+  if (data.national_cadastral_number && !/^\d{30}$/.test(data.national_cadastral_number)) throw new Error("El Número Predial Nacional debe tener exactamente 30 dígitos.");
+  if (data.real_estate_registration.length > 40) throw new Error("La matrícula inmobiliaria debe tener máximo 40 caracteres.");
+  if (data.stratum !== null && (!Number.isInteger(data.stratum) || data.stratum < 0 || data.stratum > 6)) throw new Error("El estrato debe estar entre 0 y 6.");
+  if ([data.cadastral_appraisal, data.official_lot_area, data.official_built_area].some(value => value !== null && (!Number.isFinite(value) || value < 0))) throw new Error("Revisa el avalúo y las áreas oficiales registradas.");
+  if (data.bedrooms < 0 || data.bathrooms < 0 || data.garage_spaces < 0 || !Number.isInteger(data.bedrooms) || !Number.isInteger(data.bathrooms) || !Number.isInteger(data.garage_spaces)) {
     throw new Error("Habitaciones y baños deben ser números enteros iguales o mayores que cero.");
+  }
+  if (data.property_code.length > 40 || data.audio_tours.length > 20 || data.video_presentations.length > 20) {
+    throw new Error("Revisa el código del inmueble y el número de archivos multimedia.");
   }
 }
 
@@ -67,10 +90,13 @@ function dbValues(data: PropertyInput) {
     title: data.title.trim(),
     description: data.description.trim(),
     price: data.price,
+    property_code: data.property_code.trim() || null,
+    periodicity: data.periodicity,
     type: data.type,
     area: data.area_sqm,
     bedrooms: data.bedrooms,
     bathrooms: data.bathrooms,
+    garage_spaces: data.garage_spaces,
     location: data.location_text.trim(),
     municipality: data.municipality.trim() || data.location_text.split(",")[0]?.trim() || "",
     ["ubicación"]: data.department.trim() || data.location_text.split(",").slice(1).join(",").trim(),
@@ -79,7 +105,18 @@ function dbValues(data: PropertyInput) {
     lat: data.lat,
     lng: data.lng,
     cadastral_id: data.cadastral_id.trim() || null,
+    chip: data.chip.trim() || null,
+    national_cadastral_number: data.national_cadastral_number || null,
+    real_estate_registration: data.real_estate_registration.trim() || null,
+    stratum: data.stratum,
+    cadastral_appraisal: data.cadastral_appraisal,
+    official_lot_area: data.official_lot_area,
+    official_built_area: data.official_built_area,
+    deposits: data.deposits,
     images: data.images.filter(url => typeof url === "string" && /^https:\/\//i.test(url)),
+    audio_tours: data.audio_tours.filter(item => /^https:\/\//i.test(item.url)),
+    video_presentations: data.video_presentations.filter(item => /^https:\/\//i.test(item.url)),
+    dossier: data.dossier,
     features: data.features.map(item => item.trim()).filter(Boolean),
     categories: data.categories,
     payment: data.payment.map(item => item.trim()).filter(Boolean),
@@ -102,6 +139,10 @@ async function removeUnreferencedStorageFiles(supabase: Awaited<ReturnType<typeo
   if (!paths.length) return;
   const { error } = await supabase.storage.from("property-images").remove(paths);
   if (error) console.error("No se pudieron limpiar algunos archivos eliminados del inmueble:", error.message);
+}
+
+function mediaUrls(items: Array<{ url?: string }> | null | undefined) {
+  return (items || []).map(item => item.url).filter((url): url is string => typeof url === "string");
 }
 
 function slugify(value: string) {
@@ -149,7 +190,7 @@ export async function updateProperty(id: number, data: PropertyInput): Promise<A
   try {
     if (!Number.isSafeInteger(id) || id < 1) throw new Error("El identificador del inmueble no es válido.");
     const supabase = await authorizedClient();
-    const { data: existing, error: readError } = await supabase.from("properties").select("images").eq("id", id).maybeSingle();
+    const { data: existing, error: readError } = await supabase.from("properties").select("images,audio_tours,video_presentations").eq("id", id).maybeSingle();
     if (readError) throw readError;
     if (!existing) throw new Error("El inmueble ya no existe.");
     const { error } = await supabase.from("properties").update(dbValues(data)).eq("id", id);
@@ -158,7 +199,9 @@ export async function updateProperty(id: number, data: PropertyInput): Promise<A
       const { error: featuredError } = await supabase.rpc("set_featured_property", { target_id: id });
       if (featuredError) throw featuredError;
     }
-    await removeUnreferencedStorageFiles(supabase, existing.images || [], data.images);
+    const previousFiles = [...(existing.images || []), ...mediaUrls(existing.audio_tours), ...mediaUrls(existing.video_presentations)];
+    const retainedFiles = [...data.images, ...mediaUrls(data.audio_tours), ...mediaUrls(data.video_presentations)];
+    await removeUnreferencedStorageFiles(supabase, previousFiles, retainedFiles);
     refreshCatalog();
     return { success: true };
   } catch (error) {
@@ -170,12 +213,12 @@ export async function deleteProperty(id: number): Promise<ActionResult> {
   try {
     if (!Number.isSafeInteger(id) || id < 1) throw new Error("El identificador del inmueble no es válido.");
     const supabase = await authorizedClient();
-    const { data: existing, error: readError } = await supabase.from("properties").select("images").eq("id", id).maybeSingle();
+    const { data: existing, error: readError } = await supabase.from("properties").select("images,audio_tours,video_presentations").eq("id", id).maybeSingle();
     if (readError) throw readError;
     if (!existing) throw new Error("El inmueble ya no existe.");
     const { error } = await supabase.from("properties").delete().eq("id", id);
     if (error) throw error;
-    await removeUnreferencedStorageFiles(supabase, existing.images || [], []);
+    await removeUnreferencedStorageFiles(supabase, [...(existing.images || []), ...mediaUrls(existing.audio_tours), ...mediaUrls(existing.video_presentations)], []);
     refreshCatalog();
     return { success: true };
   } catch (error) {

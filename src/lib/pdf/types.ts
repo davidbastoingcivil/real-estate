@@ -10,6 +10,16 @@ export type CadastralProperty = {
   municipality: string | null;
   department: string | null;
   cadastral_id: string | null;
+  chip?: string | null;
+  national_cadastral_number?: string | null;
+  real_estate_registration?: string | null;
+  stratum?: number | null;
+  cadastral_appraisal?: number | null;
+  official_lot_area?: number | null;
+  official_built_area?: number | null;
+  garage_spaces?: number | null;
+  deposits?: number | null;
+  dossier?: { sections?: Array<{ title: string; description?: string; items?: string[] }> } | null;
   lat: number;
   lng: number;
   bedrooms: number;
@@ -34,7 +44,11 @@ export type CadastralReportData = {
     bedrooms: number;
     bathrooms: number;
     coordinates: { lat: number; lng: number } | null;
-    legal: { cadastralId: string; realEstateId: string };
+    legal: { cadastralId: string; chip: string; nationalCadastralNumber: string; realEstateId: string };
+    stratum: string;
+    garages: number;
+    deposits: number;
+    dossierSections: Array<{ title: string; description?: string; items?: string[] }>;
     mainImageBase64: Buffer | null;
     staticMapBase64: string | null;
   };
@@ -79,4 +93,10 @@ export type CadastralReportData = {
     capitalGainCatalysts: Array<{ projectType: string; distanceMeters: number; completionYear: number | "En planeación" }>;
   };
   warnings: string[];
+  client: { name: string; whatsapp: string } | null;
+  financialSimulation: {
+    propertyValue: number; downPaymentPercent: number; downPaymentValue: number; financedCapital: number;
+    annualEffectiveRate: number; termYears: number; monthlyPayment: number; estimatedRent: number;
+    grossAnnualYield: number; monthlyCashFlow: number;
+  } | null;
 };

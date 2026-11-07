@@ -16,7 +16,7 @@ const MapLocationIntelligence = dynamic(() => import("@/components/MapLocationIn
 type SearchView = "list" | "map" | "geoai";
 
 export default function SearchPage() {
-  const { visibleProperties, allProperties, contentLoaded } = usePropertyApp();
+  const { visibleProperties, allProperties, contentLoaded, filters, setFilters } = usePropertyApp();
   const [view, setView] = useState<SearchView>("list");
 
   return <main className="app-page">
@@ -30,11 +30,11 @@ export default function SearchPage() {
       <section className="results-panel">
         <div className="results-toolbar">
           <b>{visibleProperties.length} {visibleProperties.length === 1 ? "inmueble" : "inmuebles"} <span>de {allProperties.length} disponibles</span></b>
-          <div className="results-view-switch" role="group" aria-label="Vista de resultados">
+          <div className="results-toolbar-actions"><label className="results-sort">Ordenar<select aria-label="Ordenar resultados" value={filters.sortBy} onChange={event=>setFilters({sortBy:event.target.value as typeof filters.sortBy})}><option value="recommended">Recomendados</option><option value="price-asc">Menor precio</option><option value="price-desc">Mayor precio</option><option value="area-desc">Mayor área</option></select></label><div className="results-view-switch" role="group" aria-label="Vista de resultados">
             <button className={view === "list" ? "active" : ""} onClick={() => setView("list")} aria-pressed={view === "list"}><Search size={15}/>Lista</button>
             <button className={view === "map" ? "active" : ""} onClick={() => setView(view === "map" ? "list" : "map")} aria-pressed={view === "map"}><Map size={15}/>Mapa</button>
             <button className={view === "geoai" ? "active" : ""} onClick={() => setView(view === "geoai" ? "list" : "geoai")} aria-pressed={view === "geoai"}><Activity size={15}/>GeoAI</button>
-          </div>
+          </div></div>
         </div>
         {view === "map" ? <div className="search-map"><MapView/></div>
           : view === "geoai" ? <div className="search-map search-geoai-map"><MapLocationIntelligence properties={visibleProperties}/></div>

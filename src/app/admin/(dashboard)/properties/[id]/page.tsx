@@ -8,7 +8,7 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
   if (!Number.isSafeInteger(id) || id < 1) notFound();
   const supabase = await createSupabaseServerClient();
   const [{ data, error }, { data: propertyTypes }] = await Promise.all([
-    supabase.from("properties").select('id,title,description,price,type,area,bedrooms,bathrooms,location,status,is_published,lat,lng,cadastral_id,images,municipality,"ubicación",features,categories,payment,featured')
+    supabase.from("properties").select('id,title,description,price,property_code,periodicity,garage_spaces,deposits,chip,national_cadastral_number,real_estate_registration,stratum,cadastral_appraisal,official_lot_area,official_built_area,audio_tours,video_presentations,dossier,type,area,bedrooms,bathrooms,location,status,is_published,lat,lng,cadastral_id,images,municipality,"ubicación",features,categories,payment,featured')
       .eq("id", id).maybeSingle(),
     supabase.from("property_types").select("id,label").order("sort_order"),
   ]);
@@ -20,16 +20,30 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     title: data.title,
     description: data.description || "",
     price: Number(data.price),
+    property_code: data.property_code || "",
+    periodicity: data.periodicity === "Mensual" ? "Mensual" : "Único",
     type: data.type,
     area_sqm: Number(data.area),
     bedrooms: Number(data.bedrooms || 0),
     bathrooms: Number(data.bathrooms || 0),
+    garage_spaces: Number(data.garage_spaces || 0),
     location_text: data.location,
     status,
     lat: Number(data.lat || 0),
     lng: Number(data.lng || 0),
     cadastral_id: data.cadastral_id || "",
+    chip: data.chip || "",
+    national_cadastral_number: data.national_cadastral_number || "",
+    real_estate_registration: data.real_estate_registration || "",
+    stratum: data.stratum ?? null,
+    cadastral_appraisal: data.cadastral_appraisal === null ? null : Number(data.cadastral_appraisal),
+    official_lot_area: data.official_lot_area === null ? null : Number(data.official_lot_area),
+    official_built_area: data.official_built_area === null ? null : Number(data.official_built_area),
+    deposits: Number(data.deposits || 0),
     images: (data.images || []) as string[],
+    audio_tours: (data.audio_tours || []) as PropertyFormData["audio_tours"],
+    video_presentations: (data.video_presentations || []) as PropertyFormData["video_presentations"],
+    dossier: (data.dossier || {}) as PropertyFormData["dossier"],
     municipality: data.municipality || "",
     department: data["ubicación"] || "",
     features: (data.features || []) as string[],
