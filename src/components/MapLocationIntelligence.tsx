@@ -33,7 +33,6 @@ function GeoAiBasemap() {
     let fallback: L.TileLayer | null = null;
     let tileErrors = 0;
     let primaryLoaded = false;
-    let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
     const addEsriFallback = () => {
       if (disposed || fallback) return;
       fallback = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
@@ -41,7 +40,7 @@ function GeoAiBasemap() {
         attribution: '&copy; <a href="https://www.esri.com/">Esri</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map);
     };
-    primary = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    primary = L.tileLayer(process.env.NEXT_PUBLIC_OSM_TILE_URL?.trim() || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
@@ -50,7 +49,7 @@ function GeoAiBasemap() {
       tileErrors += 1;
       if (tileErrors >= 3) addEsriFallback();
     });
-    fallbackTimer = setTimeout(() => {
+    const fallbackTimer = setTimeout(() => {
       if (!disposed && !primaryLoaded) addEsriFallback();
     }, 7000);
     return () => {

@@ -56,6 +56,7 @@ export type CadastralReportData = {
     mainImageBase64: Buffer | null;
     galleryImagesBase64: Buffer[];
     staticMapBase64: string | null;
+    mapUnavailableReason: string | null;
   };
   officialData: {
     recordFound: boolean | null;

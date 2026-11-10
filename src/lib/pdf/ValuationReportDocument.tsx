@@ -278,7 +278,7 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
     <Page size="A4" style={styles.page}>
       <ReportHeader section="ANÁLISIS NORMATIVO, ESPACIAL Y FUENTES PÚBLICAS" data={data}/>
       <Text style={styles.reportSectionTitle}>03 · ANÁLISIS NORMATIVO Y ESPACIAL (EL PREDIO Y SU ENTORNO)</Text>
-      {property.staticMapBase64 ? <Image src={property.staticMapBase64} style={styles.reportMap}/> : <View style={[styles.reportMap,styles.reportMapPlaceholder]}><Text>Mapa no disponible · Radio de análisis {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} m</Text></View>}
+      {property.staticMapBase64 ? <Image src={property.staticMapBase64} style={styles.reportMap}/> : <View style={[styles.reportMap,styles.reportMapPlaceholder]}><Text>Mapa no disponible: {property.mapUnavailableReason || "causa no identificada"} · Radio de análisis {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} m</Text></View>}
       <Text style={styles.reportSectionTitle}>NORMA URBANA (POT) & PUNTOS DE INTERÉS</Text>
       <View style={styles.reportTable}>
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>DIMENSIÓN TERRITORIAL</Text><Text style={styles.reportCell}>INDICADOR / NORMA POT</Text><Text style={styles.reportCell}>DIAGNÓSTICO / COBERTURA</Text></View>
