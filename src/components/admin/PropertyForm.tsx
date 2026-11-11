@@ -63,6 +63,15 @@ export default function PropertyForm({ initialData, propertyTypes = [] }: { init
         setNotice({ kind: "error", text: result.error });
         return;
       }
+      const propertyId = result.propertyId ?? initialData?.id;
+      if (propertyId && Number.isSafeInteger(propertyId) && propertyId > 0) {
+        void fetch("/api/admin/osm/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ property_id: propertyId, lat: payload.lat, lng: payload.lng, radius_meters: 1000 }),
+          keepalive: true,
+        }).catch(() => undefined);
+      }
       if (result.warning) {
         setNotice({ kind: "warning", text: result.warning });
         router.refresh();

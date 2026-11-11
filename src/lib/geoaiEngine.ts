@@ -78,6 +78,10 @@ function fallbackIsochrone(lat: number, lng: number, minutes: number, travelMode
   };
 }
 
+export function estimatePropertyIsochrone(lat: number, lng: number, minutes: number, travelMode: TravelMode): IsochroneFeature {
+  return fallbackIsochrone(lat, lng, minutes, travelMode);
+}
+
 /** Uses PostGIS for its geometric buffer only; POIs and scores are not read or persisted. */
 export async function getPropertyIsochrone(client: SupabaseClient, request: GeoAiRequest): Promise<IsochroneFeature> {
   const minutes = request.minutes ?? 10;

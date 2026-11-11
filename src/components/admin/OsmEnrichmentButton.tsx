@@ -54,12 +54,12 @@ export default function OsmEnrichmentButton({ lat, lng, onAddressResolved }: {
   return <div className="admin-osm-enrichment">
     <div>
       <b>Completar ubicación con OpenStreetMap</b>
-      <p>Consulta una sugerencia de dirección e importa puntos cercanos al catálogo interno.</p>
+      <p>Consulta una sugerencia de dirección e importa puntos cercanos para el mapa y los informes.</p>
     </div>
     <button type="button" className="button button-outline" onClick={() => void enrich()} disabled={loading || !hasCoordinates}>
       {loading ? <><LoaderCircle size={15} className="spin"/> Consultando…</> : <><MapPinned size={15}/> Consultar OSM</>}
     </button>
     {message && <p className={`admin-osm-notice ${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p>}
-    <small>Al consultar, los puntos se guardan en Supabase para uso administrativo. El PDF y la vista GeoAI pública consultan OpenStreetMap al vuelo y no almacenan esos resultados. Las coordenadas se envían a servicios públicos de OpenStreetMap; verifica las sugerencias comunitarias.</small>
+    <small>Al guardar el inmueble se inicia una actualización de puntos y se conserva la última consulta en Supabase para reutilizarla en el mapa y el PDF. Las coordenadas se envían a servicios públicos de OpenStreetMap; verifica las sugerencias comunitarias.</small>
   </div>;
 }

@@ -1,5 +1,7 @@
 import type { CadastralProperty, CadastralReportData } from "@/lib/pdf/types";
-import { fetchPOIsOnTheFly, makePoiHeatmap } from "@/lib/geo/overpassClient";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { analyticsPoiCounts, analyticsPoiPoints } from "@/lib/geo/propertyAnalytics";
+import { makePoiHeatmap, type LivePoiResult } from "@/lib/geo/overpassClient";
 import { buildStaticMap } from "@/lib/pdf/staticMap";
 
 type JsonRecord = Record<string, unknown>;
@@ -87,7 +89,7 @@ function lookupTerritorialData(municipalityCode: string | null) {
   ] as const);
 }
 
-export async function getGovernmentReportData(property: CadastralProperty) {
+export async function getGovernmentReportData(property: CadastralProperty, supabase: SupabaseClient) {
   const warnings: string[] = [];
   const coordinatesValid = Number.isFinite(property.lat) && property.lat >= -90 && property.lat <= 90
     && Number.isFinite(property.lng) && property.lng >= -180 && property.lng <= 180
@@ -100,13 +102,32 @@ export async function getGovernmentReportData(property: CadastralProperty) {
   // lookup. This removes the previous network waterfall for the usual case
   // where the property already has its municipality code.
   const cadastralLookupPromise = lookupCadastral(property);
-  const livePoiPromise = coordinatesValid ? fetchPOIsOnTheFly(property.lat, property.lng, 1_000) : Promise.resolve(null);
+  const analyticsPromise = supabase.from("property_geo_analytics")
+    .select("accessibility,pois,urban_norm,search_radius_m,source_name,source_updated_at,status,updated_at")
+    .eq("property_id", property.id)
+    .maybeSingle();
   const declaredTerritorialPromise = lookupTerritorialData(declaredMunicipalityCode);
-  const [cadastralLookup, livePoiResult, declaredTerritorialResult] = await Promise.all([
+  const [cadastralLookup, analyticsResult, declaredTerritorialResult] = await Promise.all([
     cadastralLookupPromise,
-    livePoiPromise,
+    analyticsPromise,
     declaredTerritorialPromise,
   ]);
+  const geoCache = analyticsResult.error ? null : analyticsResult.data as Record<string, unknown> | null;
+  const storedPois = geoCache?.pois && typeof geoCache.pois === "object" ? geoCache.pois as Record<string, unknown> : {};
+  const storedPoints = analyticsPoiPoints(storedPois.points);
+  const storedCounts = analyticsPoiCounts(storedPois.counts);
+  const livePoiResult: LivePoiResult | null = geoCache?.status === "ready" && typeof geoCache.source_updated_at === "string" ? {
+    source: "OpenStreetMap",
+    available: true,
+    radiusMeters: Number(geoCache.search_radius_m) || 1000,
+    fetchedAt: geoCache.source_updated_at,
+    counts: storedCounts,
+    total: Number(storedPois.total) || storedPoints.length,
+    points: storedPoints,
+    topPoints: storedPoints.slice(0, 10),
+    truncated: storedPois.truncated === true,
+    warning: storedPois.truncated === true ? "La fuente limitó los puntos guardados; el conteo puede ser parcial." : null,
+  } : null;
   const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
   const externalMunicipalityCode = typeof officialProperty?.municipality_code === "string" && /^\d{5}$/.test(officialProperty.municipality_code)
     ? officialProperty.municipality_code : null;
@@ -133,7 +154,7 @@ export async function getGovernmentReportData(property: CadastralProperty) {
   const ipmResult = territorialResults?.[1] || { status: "fulfilled" as const, value: null };
   const municipalStatsResult = territorialResults?.[2] || { status: "fulfilled" as const, value: null };
   const livePois = livePoiResult;
-  const poiSearchRadiusUsed = 1_000;
+  const poiSearchRadiusUsed = Number(geoCache?.search_radius_m) || 1_000;
   const poiCounts = livePois?.counts || { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
   const poiHeatmap = makePoiHeatmap(livePois?.points || [], poiSearchRadiusUsed, 300);
   const poiCells: PoiCell[] = poiHeatmap.features.map(feature => ({
@@ -163,7 +184,9 @@ export async function getGovernmentReportData(property: CadastralProperty) {
   if (censusResult.status === "rejected" || ipmResult.status === "rejected") warnings.push("No se pudieron consultar algunos indicadores territoriales del DANE.");
   if (municipalStatsResult.status === "rejected") warnings.push("No fue posible obtener las estadísticas municipales catastrales del IGAC.");
   if (municipalityCode && (!census || !ipm)) warnings.push("Los indicadores municipales DANE no están disponibles para este código territorial.");
-  if (coordinatesValid && livePois?.warning) warnings.push(livePois.warning);
+  if (analyticsResult.error) warnings.push("La caché territorial no está disponible para este informe.");
+  else if (coordinatesValid && !livePois) warnings.push("El análisis de puntos de interés aún no está guardado para este inmueble.");
+  if (livePois?.warning) warnings.push(livePois.warning);
   if (!coordinatesValid) warnings.push("Este inmueble no tiene coordenadas válidas para mostrar el mapa ni consultar puntos de interés.");
   const normalizedCadastralId = (property.cadastral_id || "").replace(/[^\d]/g, "");
   if (cadastralLookup.method === "coordinates" && property.cadastral_id && /^\d{20}$/.test(normalizedCadastralId)) {

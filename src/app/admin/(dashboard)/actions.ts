@@ -41,7 +41,7 @@ export type PropertyInput = {
   dossier: ProjectDossier;
 };
 
-type ActionResult = { success: true; warning?: string } | { success: false; error: string };
+type ActionResult = { success: true; warning?: string; propertyId?: number } | { success: false; error: string };
 
 const extendedPropertyColumns = [
   "property_code", "periodicity", "garage_spaces", "municipality_code", "chip", "national_cadastral_number",
@@ -217,7 +217,7 @@ export async function createProperty(data: PropertyInput): Promise<ActionResult>
       if (featuredError) throw featuredError;
     }
     refreshCatalog();
-    return migrationPending ? { success: true, warning: migrationWarning } : { success: true };
+    return migrationPending ? { success: true, warning: migrationWarning, propertyId: Number(created.id) } : { success: true, propertyId: Number(created.id) };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "No se pudo crear el inmueble." };
   }
@@ -247,7 +247,7 @@ export async function updateProperty(id: number, data: PropertyInput): Promise<A
     const retainedFiles = migrationPending ? data.images : [...data.images, ...mediaUrls(data.audio_tours), ...mediaUrls(data.video_presentations)];
     await removeUnreferencedStorageFiles(supabase, previousFiles, retainedFiles);
     refreshCatalog();
-    return migrationPending ? { success: true, warning: migrationWarning } : { success: true };
+    return migrationPending ? { success: true, warning: migrationWarning, propertyId: id } : { success: true, propertyId: id };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "No se pudo actualizar el inmueble." };
   }

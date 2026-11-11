@@ -178,7 +178,7 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
         <Fact label="SALUD" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.health) : "En validación territorial"}/>
         <Fact label="PARQUES Y RECREACIÓN" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.parks) : "En validación territorial"}/>
       </View>
-      <Text style={styles.sourceNote}>Fuente: {data.geoSpatialContext.poiSource}. Los puntos se consultan al generar el informe y no se escriben en Supabase. Los datos de OpenStreetMap pueden estar incompletos y se distribuyen bajo ODbL.{data.geoSpatialContext.poiFetchedAt ? ` Consulta: ${dateLabel(data.geoSpatialContext.poiFetchedAt)}.` : ""}</Text>
+      <Text style={styles.sourceNote}>Fuente: {data.geoSpatialContext.poiSource}. Se lee la última consulta guardada en la caché territorial del inmueble. Los datos de OpenStreetMap pueden estar incompletos y se distribuyen bajo ODbL.{data.geoSpatialContext.poiFetchedAt ? ` Consulta: ${dateLabel(data.geoSpatialContext.poiFetchedAt)}.` : ""}</Text>
     </View>
   </>;
 }

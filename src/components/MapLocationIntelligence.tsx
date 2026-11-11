@@ -17,9 +17,10 @@ type ApiResponse = GeoAiAnalysis & {
   property: { id: number; title: string } | null;
   coordinates: { lat: number; lng: number };
   poiSource: "OpenStreetMap" | "No disponible";
-  poiFetchedAt: string;
+  poiFetchedAt: string | null;
   poiWarning: string | null;
   livePoiCounts: LivePoiCounts;
+  geoAnalytics?: { status: "pending" | "ready" | "unavailable"; updatedAt: string | null; searchRadiusMeters: number; accessibility: Record<string, unknown>; urbanNorm: Record<string, unknown> };
   error?: string;
 };
 
@@ -83,7 +84,7 @@ function FocusLocation({ position }: { position: [number, number] | null }) {
 }
 
 function formatScore(value: number | null) {
-  return value === null ? "Sin datos" : `${(value / 10).toFixed(1)} / 10`;
+  return value === null ? "No calculado" : `${(value / 10).toFixed(1)} / 10`;
 }
 
 const poiLabels: Array<[PoiCategory, string]> = [
@@ -100,7 +101,7 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
   const properties = useMemo(() => (propertySource ?? allProperties).filter(located), [allProperties, propertySource]);
   const [selectedId, setSelectedId] = useState("");
   const [mode, setMode] = useState<"properties" | "geoai">("properties");
-  const [radiusMeters, setRadiusMeters] = useState(1500);
+  const [radiusMeters, setRadiusMeters] = useState(1000);
   const [minutes, setMinutes] = useState(10);
   const [travelMode, setTravelMode] = useState<TravelMode>("walking");
   const [analysisResult, setAnalysisResult] = useState<{ key: string; data: ApiResponse } | null>(null);
@@ -169,7 +170,7 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
         {properties.length ? properties.map(property => <option key={property.id} value={property.id}>{property.name}</option>) : <option value="">No hay ubicaciones registradas</option>}
       </select></label>
       {mode === "geoai" && <>
-        <div className="geoai-control-row"><label><span><Layers3 size={13}/> Radio de análisis</span><select value={radiusMeters} onChange={event => setRadiusMeters(Number(event.target.value))}><option value={500}>500 m</option><option value={1500}>1.5 km</option><option value={3000}>3 km</option><option value={5000}>5 km</option></select></label>
+        <div className="geoai-control-row"><label><span><Layers3 size={13}/> Radio de análisis</span><select value={radiusMeters} onChange={event => setRadiusMeters(Number(event.target.value))}><option value={500}>500 m</option><option value={1000}>1 km</option></select></label>
           <label><span><Route size={13}/> Tiempo</span><select value={minutes} onChange={event => setMinutes(Number(event.target.value))}><option value={5}>5 min</option><option value={10}>10 min</option><option value={15}>15 min</option></select></label></div>
         <label className="geoai-travel-mode"><span>Modo de desplazamiento</span><select value={travelMode} onChange={event => setTravelMode(event.target.value as TravelMode)}><option value="walking">A pie</option><option value="driving">En vehículo</option></select></label>
       </>}
@@ -177,7 +178,9 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
 
     {mode === "geoai" && <aside className="geoai-score-card" aria-live="polite">
       <div className="geoai-score-heading"><div><span>INTELIGENCIA TERRITORIAL</span><b>{selected?.name ?? "Selecciona un inmueble"}</b></div>{loading && <LoaderCircle size={17} className="spin" aria-label="Actualizando análisis"/>}</div>
-      {error ? <p className="geoai-error">{error}</p> : <>
+      {loading ? <div className="geoai-skeleton" role="status" aria-label="Cargando datos territoriales">
+        <span/><span/><span/><span/><small>Consultando datos guardados del inmueble…</small>
+      </div> : error ? <p className="geoai-error">No se pudo cargar la información territorial. Intenta de nuevo más tarde.</p> : <>
         <div className="geoai-opportunity"><span>Oportunidad espacial</span><strong>{loading ? "Calculando…" : formatScore(intelligence?.opportunity_score ?? null)}</strong></div>
         <div className="geoai-metric-grid">
           <div><span>Accesibilidad</span><b>{loading ? "Calculando…" : formatScore(intelligence?.accessibility_score ?? null)}</b></div>
@@ -185,12 +188,14 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
           <div><span>Infraestructura</span><b>{loading ? "Calculando…" : formatScore(intelligence?.infrastructure_growth_score ?? null)}</b></div>
           <div><span>Riesgos</span><b>{loading ? "Calculando…" : formatScore(intelligence?.risk_score ?? null)}</b></div>
         </div>
-        <div className="geoai-data-summary"><span>{intelligence?.total_pois ?? 0} POI en el radio</span><span>Cobertura: {confidenceLabel(intelligence?.confidence)}</span></div>
-        {analysis?.livePoiCounts && <div className="geoai-poi-count-grid" aria-label="Puntos de interés consultados en vivo">
+        <div className="geoai-data-summary"><span>{analysis?.poiSource === "OpenStreetMap" ? `${intelligence?.total_pois ?? 0} POI registrados` : "Datos territoriales en preparación"}</span><span>Cobertura: {confidenceLabel(intelligence?.confidence)}</span></div>
+        {analysis?.poiSource === "OpenStreetMap" && analysis.livePoiCounts && <div className="geoai-poi-count-grid" aria-label="Puntos de interés guardados">
           {poiLabels.map(([category, label]) => <div key={category}><span>{label}</span><b>{analysis.livePoiCounts[category]}</b></div>)}
         </div>}
-        {!loading && !intelligence?.total_pois && <small className="geoai-error">{analysis?.poiWarning || "OpenStreetMap no encontró puntos de interés en esta ubicación y radio."}</small>}
-        <small className="geoai-disclaimer">Los puntos se consultan al vuelo desde OpenStreetMap y no se guardan en Supabase. Los puntajes de inversión requieren capas oficiales verificadas. El polígono es una aproximación, no una ruta real.</small>
+        {analysis?.poiWarning && <small className="geoai-disclaimer">{analysis.poiWarning}</small>}
+        {analysis?.poiSource === "OpenStreetMap" && !intelligence?.total_pois && <small className="geoai-disclaimer">OpenStreetMap no registró puntos clasificados en este radio a la fecha de la consulta.</small>}
+        {analysis?.poiFetchedAt && <small className="geoai-disclaimer">Actualizado: {new Date(analysis.poiFetchedAt).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" })} · radio guardado {analysis.geoAnalytics?.searchRadiusMeters.toLocaleString("es-CO")} m.</small>}
+        <small className="geoai-disclaimer">Los puntos vienen de la última importación de OpenStreetMap y pueden estar incompletos. Los puntajes de inversión requieren capas oficiales verificadas. El polígono es una aproximación, no una ruta real.</small>
         {analysis?.warnings.filter(warning => warning !== analysis.poiWarning).map(warning => <small className="geoai-error" key={warning}>{warning}</small>)}
       </>}
     </aside>}

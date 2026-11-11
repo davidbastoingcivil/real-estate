@@ -101,7 +101,7 @@ function overpassQuery(lat: number, lng: number, radiusMeters: number) {
 }
 
 export async function POST(request: Request) {
-  let body: { lat?: number; lng?: number; radius_meters?: number };
+  let body: { property_id?: number; lat?: number; lng?: number; radius_meters?: number };
   try { body = await request.json() as typeof body; }
   catch { return response({ error: "Envía coordenadas válidas en formato JSON." }, 400); }
 
@@ -121,6 +121,18 @@ export async function POST(request: Request) {
     if (authError || !user) return response({ error: "Inicia sesión como administrador para consultar OpenStreetMap." }, 401);
     const { data: admin, error: adminError } = await supabase.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
     if (adminError || !admin) return response({ error: "La cuenta no tiene permisos para actualizar la inteligencia territorial." }, 403);
+
+    const propertyId = body.property_id === undefined ? null : Number(body.property_id);
+    if (body.property_id !== undefined && (!Number.isSafeInteger(propertyId) || (propertyId ?? 0) < 1)) {
+      return response({ error: "El identificador del inmueble no es válido." }, 400);
+    }
+    if (propertyId !== null) {
+      const { data: property, error } = await supabase.from("properties").select("id,lat,lng").eq("id", propertyId).maybeSingle();
+      if (error || !property) return response({ error: "No encontramos el inmueble que se va a actualizar." }, 404);
+      if (Math.abs(Number(property.lat) - lat) > 0.00001 || Math.abs(Number(property.lng) - lng) > 0.00001) {
+        return response({ error: "Las coordenadas cambiaron. Guarda de nuevo el inmueble antes de consultar su entorno." }, 409);
+      }
+    }
 
     let address: OsmAddress | null = null;
     try { address = await reverseGeocode(lat, lng); }
@@ -176,15 +188,68 @@ export async function POST(request: Request) {
       if (error) return response({ error: `No se pudieron guardar los puntos OSM: ${error.message}`, address: addressFields(address) }, 500);
     }
 
+    if (propertyId !== null && !poiWarning) {
+      const distanceMeters = (latA: number, lngA: number, latB: number, lngB: number) => {
+        const radians = (value: number) => value * Math.PI / 180;
+        const dLat = radians(latB - latA);
+        const dLng = radians(lngB - lngA);
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(radians(latA)) * Math.cos(radians(latB)) * Math.sin(dLng / 2) ** 2;
+        return Math.round(6_371_000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
+      };
+      const points = pois.flatMap(item => {
+        const [pointLng, pointLat] = item.location.coordinates;
+        const mappedCategory = item.category === "commerce" ? "commercial" : item.category === "recreation" ? "parks" : item.category;
+        if (!["transport", "health", "education", "commercial", "parks"].includes(mappedCategory)) return [];
+        const distance = distanceMeters(lat, lng, pointLat, pointLng);
+        if (distance > radiusMeters) return [];
+        return [{ id: item.external_id, name: item.name, category: mappedCategory, lat: pointLat, lng: pointLng, distanceMeters: distance }];
+      });
+      const counts = points.reduce<Record<string, number>>((acc, point) => {
+        acc[point.category] = (acc[point.category] || 0) + 1;
+        return acc;
+      }, { transport: 0, health: 0, education: 0, commercial: 0, parks: 0 });
+      const { error } = await supabase.from("property_geo_analytics").upsert({
+        property_id: propertyId,
+        coordinates: { type: "Point", coordinates: [lng, lat] },
+        accessibility: {
+          walking: { mode: "walking", method: "radial_approximation", note: "No representa una ruta por calles." },
+          driving: { mode: "driving", method: "radial_approximation", note: "No representa una ruta por calles." },
+          public_transport: { status: "not_available", reason: "No hay proveedor de isócronas de transporte público configurado." },
+          source: "radial_approximation",
+          note: "No se consultó una red vial de tiempos. El polígono de la aplicación es una aproximación circular.",
+        },
+        pois: { counts, points, total: points.length, truncated: elements.length >= 200 },
+        search_radius_m: radiusMeters,
+        source_name: "OpenStreetMap",
+        source_updated_at: importedAt,
+        status: "ready",
+        updated_at: importedAt,
+      }, { onConflict: "property_id" });
+      if (error) return response({ error: "Se importaron los puntos, pero no se pudo actualizar la caché territorial del inmueble." }, 500);
+    }
+
     const { data: geoai, error: geoaiError } = await supabase.rpc("get_location_intelligence_score", {
       lat, lng, radius_meters: radiusMeters,
     });
     if (geoaiError) console.error("No se pudo actualizar la lectura GeoAI después de importar OSM:", geoaiError.message);
+    if (propertyId !== null && !geoaiError && geoai) {
+      const { error } = await supabase.from("property_geo_analytics")
+        .update({ accessibility: {
+          walking: { mode: "walking", method: "radial_approximation", note: "No representa una ruta por calles." },
+          driving: { mode: "driving", method: "radial_approximation", note: "No representa una ruta por calles." },
+          public_transport: { status: "not_available", reason: "No hay proveedor de isócronas de transporte público configurado." },
+          scores: geoai,
+          source: "OpenStreetMap · heuristic-v1",
+        } })
+        .eq("property_id", propertyId);
+      if (error) console.error("No se pudieron guardar los indicadores GeoAI del inmueble:", error.message);
+    }
 
     return response({
       success: true,
       address: addressFields(address),
       poi_count: pois.length,
+      analytics_saved: propertyId !== null && !poiWarning,
       radius_meters: radiusMeters,
       geoai: geoaiError ? null : geoai,
       poi_warning: poiWarning || null,
