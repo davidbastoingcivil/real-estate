@@ -11,6 +11,7 @@ import "leaflet/dist/leaflet.css";
 import { formatCOP } from "@/data/properties";
 import { usePropertyApp } from "@/components/AppProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { hasUsableWgs84Coordinates } from "@/lib/geo/coordinates";
 
 const pin = L.divIcon({ className: "gold-pin-wrap", html: '<span class="gold-pin">✦</span>', iconSize: [36, 42], iconAnchor: [18, 38] });
 type Property = ReturnType<typeof usePropertyApp>["visibleProperties"][number];
@@ -22,7 +23,7 @@ const basemapOptions: { id: BasemapStyle; label: string }[] = [
   { id: "arcgis/imagery", label: "Satélite" },
   { id: "osm", label: "OpenStreetMap" },
 ];
-const located = (property: Property) => Number.isFinite(property.lat) && Number.isFinite(property.lng) && (property.lat !== 0 || property.lng !== 0);
+const located = (property: Property) => hasUsableWgs84Coordinates(property.lat, property.lng);
 const unitPrice = (property: Property) => property.area > 0 ? property.price / property.area : null;
 const formatUnitPrice = (value: number) => `${formatCOP(Math.round(value))} / m²`;
 
@@ -44,60 +45,87 @@ function ArcGISBasemap({ style, onStatus }: { style: BasemapStyle; onStatus: (st
     let fallback: L.TileLayer | null = null;
     let glMap: MapLibreMap | undefined;
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+    let mapCheckFrame: number | undefined;
+    let styleReady = false;
+    let fallbackAdded = false;
     let onLoad: ((event: MapLibreError) => void) | undefined;
     let onError: ((event: MapLibreError) => void) | undefined;
     const clearFallbackTimer = () => { if (fallbackTimer) clearTimeout(fallbackTimer); };
-
-    const addFallback = (status: BasemapStatus) => {
-      if (disposed) return;
+    const stopMapCheck = () => { if (mapCheckFrame !== undefined) cancelAnimationFrame(mapCheckFrame); };
+    const addOsmFallback = () => {
       fallback = L.tileLayer(process.env.NEXT_PUBLIC_OSM_TILE_URL?.trim() || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
       }).addTo(map);
+    };
+
+    const addFallback = (status: BasemapStatus) => {
+      if (disposed || fallbackAdded) return;
+      fallbackAdded = true;
+      clearFallbackTimer();
+      stopMapCheck();
+      if (layer) map.removeLayer(layer);
+      layer = null;
+      addOsmFallback();
       onStatus(status);
+    };
+    const markReady = () => {
+      if (disposed || fallbackAdded || styleReady) return;
+      styleReady = true;
+      clearFallbackTimer();
+      stopMapCheck();
+      onStatus("ready");
     };
 
     if (style === "osm") {
-      addFallback("ready");
+      addOsmFallback();
+      onStatus("ready");
       return () => { disposed = true; if (fallback) map.removeLayer(fallback); };
     }
 
     if (!apikey) {
-      addFallback("missing-key");
+      addOsmFallback();
+      onStatus("missing-key");
       return () => { disposed = true; if (fallback) map.removeLayer(fallback); };
     }
 
     try {
       const basemapLayer = vectorBasemapLayer(style, { apikey, version: 2, language: "es" }) as ArcGISLayer;
       layer = basemapLayer;
+      basemapLayer.on("styleLoaded", markReady);
       basemapLayer.addTo(map);
-      glMap = basemapLayer.getMaplibreMap?.();
-      onLoad = () => { clearFallbackTimer(); if (!disposed) onStatus("ready"); };
+      onLoad = markReady;
       onError = event => {
         const status = event.error?.status;
-        if (!disposed && (status === 401 || status === 403)) {
-          clearFallbackTimer();
-          if (layer) map.removeLayer(layer);
-          layer = null;
-          addFallback("unavailable");
-        }
+        const message = event.error?.message || "";
+        if (status === 401 || status === 403 || status !== undefined && status >= 400
+          || /network|style|source|tile|fetch|load/i.test(message)) addFallback("unavailable");
       };
-      glMap?.on("load", onLoad);
-      glMap?.on("error", onError);
-      fallbackTimer = setTimeout(() => {
-        if (!disposed && !glMap?.isStyleLoaded()) {
-          if (layer) map.removeLayer(layer);
-          layer = null;
-          addFallback("unavailable");
+      const attachMapListeners = () => {
+        if (disposed || fallbackAdded || styleReady || !layer) return;
+        const candidate = layer.getMaplibreMap?.();
+        if (candidate) {
+          glMap = candidate;
+          glMap.on("load", onLoad!);
+          glMap.on("error", onError!);
+          if (glMap.isStyleLoaded()) markReady();
+          return;
         }
+        mapCheckFrame = requestAnimationFrame(attachMapListeners);
+      };
+      fallbackTimer = setTimeout(() => {
+        if (!disposed && !styleReady) addFallback("unavailable");
       }, 9000);
       onStatus("loading");
+      attachMapListeners();
     } catch {
       addFallback("unavailable");
     }
     return () => {
       disposed = true;
       if (fallbackTimer) clearTimeout(fallbackTimer);
+      stopMapCheck();
+      if (layer) layer.off("styleLoaded", markReady);
       if (glMap && onLoad) glMap.off("load", onLoad);
       if (glMap && onError) glMap.off("error", onError);
       if (layer) map.removeLayer(layer);

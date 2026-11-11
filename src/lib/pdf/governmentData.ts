@@ -1,6 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CadastralProperty, CadastralReportData } from "@/lib/pdf/types";
-import { fetchPOIsOnTheFly, makePoiHeatmap, type LivePoi } from "@/lib/geo/overpassClient";
+import { fetchPOIsOnTheFly, makePoiHeatmap } from "@/lib/geo/overpassClient";
+import { buildStaticMap } from "@/lib/pdf/staticMap";
 
 type JsonRecord = Record<string, unknown>;
 type PoiCell = CadastralReportData["geoSpatialContext"]["poiCells"][number];
@@ -78,107 +78,38 @@ async function lookupCadastral(property: CadastralProperty) {
   return { payload: identifierMiss, method: identifierMiss ? "cadastral_id" as const : cadastralId ? "cadastral_id" as const : "none" as const };
 }
 
-function encodePolyline(points: Array<[number, number]>) {
-  let previousLat = 0;
-  let previousLng = 0;
-  let result = "";
-  const encode = (value: number) => {
-    let current = value < 0 ? ~(value << 1) : value << 1;
-    let chunk = "";
-    while (current >= 0x20) {
-      chunk += String.fromCharCode((0x20 | (current & 0x1f)) + 63);
-      current >>= 5;
-    }
-    return chunk + String.fromCharCode(current + 63);
-  };
-  for (const [lng, lat] of points) {
-    const scaledLat = Math.round(lat * 1e5);
-    const scaledLng = Math.round(lng * 1e5);
-    result += encode(scaledLat - previousLat) + encode(scaledLng - previousLng);
-    previousLat = scaledLat;
-    previousLng = scaledLng;
-  }
-  return result;
+function lookupTerritorialData(municipalityCode: string | null) {
+  if (!municipalityCode) return Promise.resolve(null);
+  return Promise.allSettled([
+    cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }),
+    cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }),
+    cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }),
+  ] as const);
 }
 
-function staticMapUrl(lat: number, lng: number, points: LivePoi[], token: string, includeRadius: boolean) {
-  const coordinate = (value: number) => Number(value.toFixed(6)).toString();
-  const circle = includeRadius ? Array.from({ length: 25 }, (_, index) => {
-    const angle = index / 24 * Math.PI * 2;
-    const dLat = 1_000 / 111_320;
-    const dLng = 1_000 / (111_320 * Math.max(Math.abs(Math.cos(lat * Math.PI / 180)), 0.1));
-    return [lng + dLng * Math.cos(angle), lat + dLat * Math.sin(angle)] as [number, number];
-  }) : null;
-  const radiusOverlay = circle ? `path-3+d4af37-0.9+10251d-0.15(${encodeURIComponent(encodePolyline(circle))})` : null;
-  const overlays = [
-    `pin-l+d4af37(${coordinate(lng)},${coordinate(lat)})`,
-    ...points.map(point => `pin-s+3b82f6(${coordinate(point.lng)},${coordinate(point.lat)})`),
-    ...(radiusOverlay ? [radiusOverlay] : []),
-  ].join(",");
-  const url = new URL(`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/${overlays}/auto/900x520@2x`);
-  url.searchParams.set("access_token", token);
-  return url.toString();
-}
-
-async function fetchStaticMapImage(url: string) {
-  try {
-    const response = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(4_500) });
-    const contentType = response.headers.get("content-type") || "";
-    const length = Number(response.headers.get("content-length") || 0);
-    if (!response.ok || !/^image\/(png|jpeg)$/i.test(contentType) || length > 4_000_000) return null;
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > 4_000_000) return null;
-    return `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
-  } catch {
-    return null;
-  }
-}
-
-async function buildStaticMap(property: CadastralProperty, points: LivePoi[]) {
-  const token = process.env.MAPBOX_ACCESS_TOKEN?.trim();
-  if (!token) return null;
-  const lat = Number(property.lat);
-  const lng = Number(property.lng);
-  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180 || (lat === 0 && lng === 0)) return null;
-
-  const nearest = points.slice(0, 10);
-  let candidate: string | null = null;
-  let markerCount = nearest.length;
-  for (; markerCount >= 0; markerCount -= 1) {
-    const current = staticMapUrl(lat, lng, nearest.slice(0, markerCount), token, true);
-    if (current.length <= 1_800) { candidate = current; break; }
-  }
-  if (!candidate) {
-    const withoutRadius = staticMapUrl(lat, lng, [], token, false);
-    if (withoutRadius.length > 1_800) return null;
-    candidate = withoutRadius;
-  }
-  const image = await fetchStaticMapImage(candidate);
-  if (image) return image;
-  if (markerCount > 0) {
-    const propertyOnly = staticMapUrl(lat, lng, [], token, true);
-    if (propertyOnly.length <= 1_800) {
-      const retry = await fetchStaticMapImage(propertyOnly);
-      if (retry) return retry;
-    }
-  }
-  const noRadius = staticMapUrl(lat, lng, [], token, false);
-  return noRadius.length <= 1_800 ? fetchStaticMapImage(noRadius) : null;
-}
-
-export async function getGovernmentReportData(property: CadastralProperty, supabase: SupabaseClient) {
+export async function getGovernmentReportData(property: CadastralProperty) {
   const warnings: string[] = [];
   const coordinatesValid = Number.isFinite(property.lat) && property.lat >= -90 && property.lat <= 90
     && Number.isFinite(property.lng) && property.lng >= -180 && property.lng <= 180
     && !(property.lat === 0 && property.lng === 0);
-  const cadastralLookup = await lookupCadastral(property);
-  const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
-  const externalMunicipalityCode = typeof officialProperty?.municipality_code === "string" && /^\d{5}$/.test(officialProperty.municipality_code)
-    ? officialProperty.municipality_code : null;
   const declaredMunicipalityCode = property.municipality_code?.trim() || null;
   if (declaredMunicipalityCode && !/^\d{5}$/.test(declaredMunicipalityCode)) {
     throw new CadastralValidationError("El código DIVIPOLA registrado en la ficha no tiene cinco dígitos. Corrígelo antes de generar el informe.");
   }
+  // Start independent, coordinate-based sources together with the cadastral
+  // lookup. This removes the previous network waterfall for the usual case
+  // where the property already has its municipality code.
+  const cadastralLookupPromise = lookupCadastral(property);
+  const livePoiPromise = coordinatesValid ? fetchPOIsOnTheFly(property.lat, property.lng, 1_000) : Promise.resolve(null);
+  const declaredTerritorialPromise = lookupTerritorialData(declaredMunicipalityCode);
+  const [cadastralLookup, livePoiResult, declaredTerritorialResult] = await Promise.all([
+    cadastralLookupPromise,
+    livePoiPromise,
+    declaredTerritorialPromise,
+  ]);
+  const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
+  const externalMunicipalityCode = typeof officialProperty?.municipality_code === "string" && /^\d{5}$/.test(officialProperty.municipality_code)
+    ? officialProperty.municipality_code : null;
   if (declaredMunicipalityCode && externalMunicipalityCode && declaredMunicipalityCode !== externalMunicipalityCode) {
     throw new CadastralValidationError(`El DIVIPOLA de la ficha (${declaredMunicipalityCode}) no coincide con la consulta catastral (${externalMunicipalityCode}). Revisa ubicación y coordenadas.`);
   }
@@ -197,13 +128,11 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   }
   const municipality = typeof officialProperty?.municipality === "string" ? officialProperty.municipality : property.municipality;
 
-  const [livePoiResult, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
-    coordinatesValid ? fetchPOIsOnTheFly(property.lat, property.lng, 1_000) : Promise.resolve(null),
-    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
-    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
-    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }) : Promise.resolve(null),
-  ]);
-  const livePois = livePoiResult.status === "fulfilled" ? livePoiResult.value : null;
+  const territorialResults = declaredTerritorialResult || await lookupTerritorialData(municipalityCode);
+  const censusResult = territorialResults?.[0] || { status: "fulfilled" as const, value: null };
+  const ipmResult = territorialResults?.[1] || { status: "fulfilled" as const, value: null };
+  const municipalStatsResult = territorialResults?.[2] || { status: "fulfilled" as const, value: null };
+  const livePois = livePoiResult;
   const poiSearchRadiusUsed = 1_000;
   const poiCounts = livePois?.counts || { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
   const poiHeatmap = makePoiHeatmap(livePois?.points || [], poiSearchRadiusUsed, 300);
@@ -249,8 +178,8 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   }
 
   const found = typeof cadastralLookup.payload?.found === "boolean" ? cadastralLookup.payload.found : null;
-  const mapBase64 = await buildStaticMap(property, livePois?.topPoints || []);
-  if (coordinatesValid && !mapBase64) warnings.push("El mapa satelital no está disponible; las demás secciones del informe se generaron normalmente.");
+  const mapResult = await buildStaticMap(property.lat, property.lng, livePois?.topPoints || []);
+  if (!mapResult.image) warnings.push(`Mapa no disponible: ${mapResult.reason || "No se obtuvo una imagen satelital."}`);
   const reportedCadastralNumber = typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number.replace(/\D/g, "") : "";
   const cadastralNumber = /^\d{30}$/.test(reportedCadastralNumber) ? reportedCadastralNumber : null;
   if (officialProperty?.cadastral_number && !cadastralNumber) warnings.push("La fuente devolvió un Número Predial Nacional con formato distinto de 30 dígitos; se omitió del informe.");
@@ -286,7 +215,8 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       dossierSections: property.dossier?.sections || [],
       mainImageBase64: null,
       galleryImagesBase64: [],
-      staticMapBase64: mapBase64,
+      staticMapBase64: mapResult.image,
+      mapUnavailableReason: mapResult.reason,
     },
     officialData: {
       recordFound: found,

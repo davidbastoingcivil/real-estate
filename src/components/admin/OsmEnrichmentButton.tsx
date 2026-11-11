@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { LoaderCircle, MapPinned } from "lucide-react";
+import { hasUsableWgs84Coordinates } from "@/lib/geo/coordinates";
 
 type AddressSuggestion = {
   display_name: string | null;
@@ -49,7 +50,7 @@ export default function OsmEnrichmentButton({ lat, lng, onAddressResolved }: {
     }
   }
 
-  const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
+  const hasCoordinates = hasUsableWgs84Coordinates(lat, lng);
   return <div className="admin-osm-enrichment">
     <div>
       <b>Completar ubicación con OpenStreetMap</b>
