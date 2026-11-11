@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { NextResponse } from "next/server";
-import { properties, type Property } from "@/data/properties";
+import type { Property } from "@/data/properties";
 import { propertyFromDatabase, type PropertyDatabaseRow } from "@/lib/supabase/properties";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import InvestmentDossierDocument, { type InvestmentDossierData } from "@/lib/pdf/InvestmentDossierDocument";
@@ -33,15 +33,14 @@ function monthlyPayment(principal: number, annualRate: number, years: number) {
 }
 
 async function findProperty(slug: string): Promise<Property | null> {
-  try {
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.from("properties").select("*").eq("slug", slug).eq("is_published", true).maybeSingle();
-    if (error) throw error;
-    if (data) return propertyFromDatabase(data as unknown as PropertyDatabaseRow);
-  } catch (error) {
-    console.error("No se pudo consultar la ficha publicada para el dossier.", error instanceof Error ? error.message : "Supabase no disponible");
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.from("properties").select("*").eq("slug", slug).eq("is_published", true).maybeSingle();
+  if (error) {
+    console.error("No se pudo consultar la ficha publicada para el dossier.", error.message);
+    throw new Error("No fue posible consultar la ficha oficial del proyecto. Inténtalo de nuevo.");
   }
-  return properties.find(item => item.slug === slug || item.id === slug || (item.id === "bambu" && slug.toLowerCase().includes("bambu"))) || null;
+  if (!data) return null;
+  return propertyFromDatabase(data as unknown as PropertyDatabaseRow);
 }
 
 export async function POST(request: Request, context: { params: Promise<{ slug: string }> }) {

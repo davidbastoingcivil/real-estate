@@ -91,10 +91,17 @@ function validate(data: PropertyInput) {
   if (data.cadastral_id.length > 50 || /[^a-zA-Z0-9 .-]/.test(data.cadastral_id)) {
     throw new Error("La cédula catastral debe tener máximo 50 caracteres alfanuméricos, puntos o guiones.");
   }
-  if (data.chip.length > 40 || /[^a-zA-Z0-9 .-]/.test(data.chip)) throw new Error("El CHIP debe tener máximo 40 caracteres alfanuméricos.");
+  const chip = data.chip.trim().toUpperCase();
+  if (chip && !/^[A-Z]{3}\d{4}[A-Z]{4}$/.test(chip)) {
+    throw new Error("El CHIP de Bogotá debe tener 11 caracteres con el formato AAA0000AAAA.");
+  }
   if (data.national_cadastral_number && !/^\d{30}$/.test(data.national_cadastral_number)) throw new Error("El Número Predial Nacional debe tener exactamente 30 dígitos.");
   if (data.real_estate_registration.length > 40) throw new Error("La matrícula inmobiliaria debe tener máximo 40 caracteres.");
   if (data.municipality_code && !/^\d{5}$/.test(data.municipality_code)) throw new Error("El código DIVIPOLA debe contener exactamente cinco dígitos.");
+  if (data.national_cadastral_number && data.municipality_code
+      && data.national_cadastral_number.slice(0, 5) !== data.municipality_code) {
+    throw new Error("Los primeros cinco dígitos del Número Predial Nacional deben coincidir con el código DIVIPOLA del municipio.");
+  }
   if (data.stratum !== null && (!Number.isInteger(data.stratum) || data.stratum < 0 || data.stratum > 6)) throw new Error("El estrato debe estar entre 0 y 6.");
   if ([data.cadastral_appraisal, data.official_lot_area, data.official_built_area].some(value => value !== null && (!Number.isFinite(value) || value < 0))) throw new Error("Revisa el avalúo y las áreas oficiales registradas.");
   if (data.bedrooms < 0 || data.bathrooms < 0 || data.garage_spaces < 0 || !Number.isInteger(data.bedrooms) || !Number.isInteger(data.bathrooms) || !Number.isInteger(data.garage_spaces)) {

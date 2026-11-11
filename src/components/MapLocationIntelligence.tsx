@@ -11,6 +11,7 @@ import { formatCOP, type Property } from "@/data/properties";
 import { usePropertyApp } from "@/components/AppProvider";
 import type { GeoAiAnalysis, TravelMode } from "@/lib/geoaiEngine";
 import type { LivePoiCounts, PoiCategory } from "@/lib/geo/overpassClient";
+import { hasUsableWgs84Coordinates } from "@/lib/geo/coordinates";
 
 type ApiResponse = GeoAiAnalysis & {
   property: { id: number; title: string } | null;
@@ -22,7 +23,7 @@ type ApiResponse = GeoAiAnalysis & {
   error?: string;
 };
 
-const located = (property: Property) => Number.isFinite(property.lat) && Number.isFinite(property.lng) && (property.lat !== 0 || property.lng !== 0);
+const located = (property: Property) => hasUsableWgs84Coordinates(property.lat, property.lng);
 const geoColor = (score: number | null) => score === null ? "#8d968d" : score >= 70 ? "#d1b36e" : score >= 40 ? "#8faf91" : "#a57b68";
 
 function GeoAiBasemap() {
@@ -122,7 +123,7 @@ export default function MapLocationIntelligence({ properties: propertySource }: 
     if (selected.databaseId) query.set("property_id", String(selected.databaseId));
     else { query.set("lat", String(selected.lat)); query.set("lng", String(selected.lng)); }
 
-    fetch(`/api/geoai/location-intelligence?${query}`, { signal: controller.signal, cache: "no-store" })
+    fetch(`/api/geoai/location-intelligence?${query}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]), cache: "no-store" })
       .then(async response => {
         const result = await response.json() as ApiResponse;
         if (!response.ok) throw new Error(result.error || "No se pudo completar el análisis territorial.");

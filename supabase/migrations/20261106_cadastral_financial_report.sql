@@ -18,6 +18,15 @@ do $$ begin
     alter table public.properties add constraint properties_national_cadastral_number_30_digits
       check (national_cadastral_number is null or national_cadastral_number ~ '^\d{30}$');
   end if;
+  if not exists (select 1 from pg_constraint where conname = 'properties_national_cadastral_divipola_prefix') then
+    alter table public.properties add constraint properties_national_cadastral_divipola_prefix
+      check (national_cadastral_number is null or municipality_code is null
+        or substring(national_cadastral_number from 1 for 5) = municipality_code);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'properties_chip_bogota_format') then
+    alter table public.properties add constraint properties_chip_bogota_format
+      check (chip is null or chip = '' or upper(chip) ~ '^[A-Z]{3}[0-9]{4}[A-Z]{4}$');
+  end if;
   if not exists (select 1 from pg_constraint where conname = 'properties_stratum_range') then
     alter table public.properties add constraint properties_stratum_range check (stratum is null or stratum between 0 and 6);
   end if;

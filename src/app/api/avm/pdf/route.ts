@@ -34,7 +34,7 @@ function cadastralProperty(databaseRow: Record<string, unknown>): CadastralPrope
 }
 
 async function renderReport(property: CadastralProperty, supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, financialSimulation: CadastralReportData["financialSimulation"], client: CadastralReportData["client"]) {
-  const report = await getGovernmentReportData(property, supabase);
+  const report = await getGovernmentReportData(property);
   const reportWithImage = await addReportImage(report, property.images);
   reportWithImage.client = client;
   reportWithImage.financialSimulation = financialSimulation;

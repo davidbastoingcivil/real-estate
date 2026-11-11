@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CadastralProperty, CadastralReportData } from "@/lib/pdf/types";
 import { fetchPOIsOnTheFly, makePoiHeatmap } from "@/lib/geo/overpassClient";
 import { buildStaticMap } from "@/lib/pdf/staticMap";
@@ -79,19 +78,38 @@ async function lookupCadastral(property: CadastralProperty) {
   return { payload: identifierMiss, method: identifierMiss ? "cadastral_id" as const : cadastralId ? "cadastral_id" as const : "none" as const };
 }
 
-export async function getGovernmentReportData(property: CadastralProperty, supabase: SupabaseClient) {
+function lookupTerritorialData(municipalityCode: string | null) {
+  if (!municipalityCode) return Promise.resolve(null);
+  return Promise.allSettled([
+    cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }),
+    cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }),
+    cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }),
+  ] as const);
+}
+
+export async function getGovernmentReportData(property: CadastralProperty) {
   const warnings: string[] = [];
   const coordinatesValid = Number.isFinite(property.lat) && property.lat >= -90 && property.lat <= 90
     && Number.isFinite(property.lng) && property.lng >= -180 && property.lng <= 180
     && !(property.lat === 0 && property.lng === 0);
-  const cadastralLookup = await lookupCadastral(property);
-  const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
-  const externalMunicipalityCode = typeof officialProperty?.municipality_code === "string" && /^\d{5}$/.test(officialProperty.municipality_code)
-    ? officialProperty.municipality_code : null;
   const declaredMunicipalityCode = property.municipality_code?.trim() || null;
   if (declaredMunicipalityCode && !/^\d{5}$/.test(declaredMunicipalityCode)) {
     throw new CadastralValidationError("El código DIVIPOLA registrado en la ficha no tiene cinco dígitos. Corrígelo antes de generar el informe.");
   }
+  // Start independent, coordinate-based sources together with the cadastral
+  // lookup. This removes the previous network waterfall for the usual case
+  // where the property already has its municipality code.
+  const cadastralLookupPromise = lookupCadastral(property);
+  const livePoiPromise = coordinatesValid ? fetchPOIsOnTheFly(property.lat, property.lng, 1_000) : Promise.resolve(null);
+  const declaredTerritorialPromise = lookupTerritorialData(declaredMunicipalityCode);
+  const [cadastralLookup, livePoiResult, declaredTerritorialResult] = await Promise.all([
+    cadastralLookupPromise,
+    livePoiPromise,
+    declaredTerritorialPromise,
+  ]);
+  const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
+  const externalMunicipalityCode = typeof officialProperty?.municipality_code === "string" && /^\d{5}$/.test(officialProperty.municipality_code)
+    ? officialProperty.municipality_code : null;
   if (declaredMunicipalityCode && externalMunicipalityCode && declaredMunicipalityCode !== externalMunicipalityCode) {
     throw new CadastralValidationError(`El DIVIPOLA de la ficha (${declaredMunicipalityCode}) no coincide con la consulta catastral (${externalMunicipalityCode}). Revisa ubicación y coordenadas.`);
   }
@@ -110,13 +128,11 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   }
   const municipality = typeof officialProperty?.municipality === "string" ? officialProperty.municipality : property.municipality;
 
-  const [livePoiResult, censusResult, ipmResult, municipalStatsResult] = await Promise.allSettled([
-    coordinatesValid ? fetchPOIsOnTheFly(property.lat, property.lng, 1_000) : Promise.resolve(null),
-    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
-    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }) : Promise.resolve(null),
-    municipalityCode && /^\d{5}$/.test(municipalityCode) ? cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }) : Promise.resolve(null),
-  ]);
-  const livePois = livePoiResult.status === "fulfilled" ? livePoiResult.value : null;
+  const territorialResults = declaredTerritorialResult || await lookupTerritorialData(municipalityCode);
+  const censusResult = territorialResults?.[0] || { status: "fulfilled" as const, value: null };
+  const ipmResult = territorialResults?.[1] || { status: "fulfilled" as const, value: null };
+  const municipalStatsResult = territorialResults?.[2] || { status: "fulfilled" as const, value: null };
+  const livePois = livePoiResult;
   const poiSearchRadiusUsed = 1_000;
   const poiCounts = livePois?.counts || { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
   const poiHeatmap = makePoiHeatmap(livePois?.points || [], poiSearchRadiusUsed, 300);

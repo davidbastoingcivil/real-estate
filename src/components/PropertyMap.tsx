@@ -11,6 +11,7 @@ import "leaflet/dist/leaflet.css";
 import { formatCOP } from "@/data/properties";
 import { usePropertyApp } from "@/components/AppProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { hasUsableWgs84Coordinates } from "@/lib/geo/coordinates";
 
 const pin = L.divIcon({ className: "gold-pin-wrap", html: '<span class="gold-pin">✦</span>', iconSize: [36, 42], iconAnchor: [18, 38] });
 type Property = ReturnType<typeof usePropertyApp>["visibleProperties"][number];
@@ -22,7 +23,7 @@ const basemapOptions: { id: BasemapStyle; label: string }[] = [
   { id: "arcgis/imagery", label: "Satélite" },
   { id: "osm", label: "OpenStreetMap" },
 ];
-const located = (property: Property) => Number.isFinite(property.lat) && Number.isFinite(property.lng) && (property.lat !== 0 || property.lng !== 0);
+const located = (property: Property) => hasUsableWgs84Coordinates(property.lat, property.lng);
 const unitPrice = (property: Property) => property.area > 0 ? property.price / property.area : null;
 const formatUnitPrice = (value: number) => `${formatCOP(Math.round(value))} / m²`;
 
