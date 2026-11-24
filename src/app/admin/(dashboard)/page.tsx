@@ -17,6 +17,22 @@ type PropertyRow = {
   is_published: boolean;
   created_at: string;
   images: string[] | null;
+  property_official_data: OfficialSync | OfficialSync[] | null;
+  property_geo_analytics: { status: string } | Array<{ status: string }> | null;
+};
+
+type OfficialSync = { status: string; message: string | null; cadastral_manager: string | null };
+
+// PostgREST returns one-to-one embeds as an object, but typings allow arrays.
+const single = <T,>(value: T | T[] | null | undefined): T | null => Array.isArray(value) ? value[0] ?? null : value ?? null;
+
+const officialLabels: Record<string, string> = {
+  pending: "Datos oficiales: sincronizando",
+  verified: "Catastro IGAC verificado",
+  not_found: "Catastro: predio no encontrado",
+  manager_not_igac: "Catastro: gestor no IGAC (carga manual)",
+  no_identifier: "Catastro: falta identificador",
+  error: "Catastro: revisar",
 };
 
 const money = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
@@ -24,9 +40,9 @@ const money = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP
 export default async function AdminDashboardPage() {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("properties")
-    .select("id,title,price,type,area,bedrooms,bathrooms,location,status,is_published,created_at,images")
+    .select("id,title,price,type,area,bedrooms,bathrooms,location,status,is_published,created_at,images,property_official_data(status,message,cadastral_manager),property_geo_analytics(status)")
     .order("created_at", { ascending: false });
-  const properties = (data || []) as PropertyRow[];
+  const properties = (data || []) as unknown as PropertyRow[];
 
   return <>
     <div className="admin-page-title admin-cms-title">
@@ -38,6 +54,8 @@ export default async function AdminDashboardPage() {
     {properties.length ? <div className="admin-cms-list">
       {properties.map(property => {
         const status = !property.is_published ? "Oculto" : property.status.toLocaleLowerCase("es").includes("vendido") ? "Vendido" : "Disponible";
+        const official = single(property.property_official_data);
+        const geo = single(property.property_geo_analytics);
         return <article className="admin-cms-card" key={property.id}>
           <div className="admin-cms-photo">{property.images?.[0] && !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(property.images[0]) ? <DriveImage className="media-fill" src={property.images[0]} alt=""/> : property.images?.length ? <Film size={26}/> : <Building2 size={26}/>}</div>
           <div className="admin-cms-card-info">
@@ -45,6 +63,10 @@ export default async function AdminDashboardPage() {
             <div className="admin-cms-location"><MapPin size={14}/>{property.location}</div>
             <div className="admin-cms-metadata"><span>{property.type}</span><span>{Number(property.area)} m²</span><span>{property.bedrooms} hab.</span><span>{property.bathrooms} baños</span></div>
             <strong>{money.format(Number(property.price))}</strong>
+            <div className="admin-cms-sync" title={official?.message || undefined}>
+              <span className={`admin-cms-sync-badge ${official?.status || "pending"}`}>{officialLabels[official?.status || "pending"] || "Datos oficiales"}</span>
+              <span className={`admin-cms-sync-badge ${geo?.status === "ready" ? "verified" : geo?.status === "unavailable" ? "error" : "pending"}`}>{geo?.status === "ready" ? "Entorno OSM listo" : geo?.status === "unavailable" ? "Entorno OSM: reintentar" : "Entorno OSM: pendiente"}</span>
+            </div>
           </div>
           <PropertyRowActions id={property.id} title={property.title}/>
         </article>;

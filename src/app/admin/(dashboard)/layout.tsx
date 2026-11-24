@@ -4,6 +4,9 @@ import { Home, LayoutDashboard, Plus } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import AdminSignOut from "@/components/admin/AdminSignOut";
 
+// Server actions here also run the Croma/OSM sync (in `after`), which can take ~30 s.
+export const maxDuration = 60;
+
 export default async function AdminDashboardLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();

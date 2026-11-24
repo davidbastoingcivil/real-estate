@@ -57,6 +57,7 @@ export type CadastralReportData = {
     galleryImagesBase64: Buffer[];
     staticMapBase64: string | null;
     mapUnavailableReason: string | null;
+    mapAttribution: string | null;
   };
   officialData: {
     recordFound: boolean | null;
@@ -71,6 +72,10 @@ export type CadastralReportData = {
     municipalityCode: string | null;
     checkedAt: string | null;
     servedFrom: string | null;
+    cadastralManager: string | null;
+    parcelAddress: string | null;
+    cadastralUpdate: { status: string | null; updateYear: number | null; yearsSinceUpdate: number | null; zone: string | null } | null;
+    buildings: Array<{ use: string; areaM2: number | null; floors: number | null; bathrooms: number | null }>;
     municipalStatistics: {
       year: number | null;
       appraisalTotal: number | null;

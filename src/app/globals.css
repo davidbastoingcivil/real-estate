@@ -317,6 +317,12 @@ body:has(.detail-page) .mobile-bottom-nav a.active,body:has(.app-page) .mobile-b
 .admin-cms-actions button{color:#995b51}
 .admin-cms-actions button:disabled{opacity:.5}
 .admin-cms-row-error{max-width:160px;font-size:8px;color:#a34036}
+.admin-cms-row-note{max-width:180px;font-size:8px;color:#39744d}
+.admin-cms-sync{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.admin-cms-sync-badge{padding:3px 8px;border-radius:20px;font-size:8px;letter-spacing:.3px;background:#f1f0ea;color:#6f6650}
+.admin-cms-sync-badge.verified{background:#edf5ef;color:#39744d}
+.admin-cms-sync-badge.manager_not_igac,.admin-cms-sync-badge.not_found,.admin-cms-sync-badge.no_identifier{background:#fbf3e3;color:#8a6a1f}
+.admin-cms-sync-badge.error{background:#f6eee9;color:#a34036}
 .admin-cms-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;text-align:center;background:#fff;border:1px solid #e8e6df}
 .admin-cms-empty>svg{color:var(--gold)}
 .admin-cms-empty h2{margin:0;font-family:var(--font-serif);font-size:23px;font-weight:500}

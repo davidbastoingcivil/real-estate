@@ -5,6 +5,17 @@ Base: informe `Informe-Tecnico-Inversion-penthouse-panoramico-tunja.pdf` (DB-18-
 
 ---
 
+## Estado (24-nov-2026)
+
+Hecho en la rama `claude/jolly-einstein-rzyhyq`:
+
+- Datos de demostración corregidos: DIVIPOLA en las 21 fichas; Carmen de Apicalá reubicada en puntos urbanos reales (antes caían en fincas de Melgar); identificadores ficticios inválidos eliminados (`supabase/data_fixes/`).
+- Nueva tabla `property_official_data` con RLS, trigger de invalidación y validaciones de formato (`supabase/migrations/20261124120000_property_official_data_sync.sql`).
+- Sincronización automática Croma + OSM al guardar en el admin, más el botón "Sincronizar" y estados visibles en el panel.
+- Informe: lee la caché, corrige hogares DANE y estadísticas catastrales, muestra gestor, vigencia, dirección y construcciones catastrales. Mapa con alternativas (Mapbox → Esri → OSM), número de página corregido y sin páginas en blanco.
+
+Pendiente: Overpass no respondió desde el entorno de pruebas. Verificar con "Sincronizar" en producción; si sigue fallando, configurar `OVERPASS_API_URL` con un servicio propio o de pago.
+
 ## 1. Diagnóstico: por qué el informe sale con "Sin dato"
 
 El informe se genera en `src/app/api/avm/pdf/route.ts` → `getGovernmentReportData()` (`src/lib/pdf/governmentData.ts`) → `ValuationReportDocument.tsx`. La integración con Croma (`api.croma.run`) **ya existe en el código**; los vacíos vienen de configuración y de datos, no de falta de integración.

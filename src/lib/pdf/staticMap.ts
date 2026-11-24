@@ -8,10 +8,14 @@ export type StaticMapFetchResult = {
   durationMs: number;
   attempts: number;
 };
+export type StaticMapProvider = "mapbox" | "esri" | "osm";
 export type StaticMapResult = StaticMapFetchResult & {
   urlLength: number | null;
   overlaySyntaxValid: boolean;
   tokenType: "public" | "secret" | "unknown" | "missing";
+  provider?: StaticMapProvider | null;
+  attribution?: string | null;
+  attemptsLog?: string[];
 };
 
 const maxImageBytes = 8_000_000;
@@ -157,7 +161,7 @@ export async function fetchStaticMapImage(url: string): Promise<StaticMapFetchRe
   return { ...lastResult, durationMs: Date.now() - startedAt };
 }
 
-export async function buildStaticMap(
+async function buildMapboxStaticMap(
   lat: number,
   lng: number,
   points: StaticMapPoint[],
@@ -228,5 +232,165 @@ export async function buildStaticMap(
     reason: result.reason || "Mapbox no devolvió una imagen satelital.",
     urlLength: candidate.url.length,
     overlaySyntaxValid: candidate.overlaySyntaxValid,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tile-based fallback (no API key): Esri World Imagery (satellite) and
+// OpenStreetMap standard tiles, composed server-side with sharp.
+// ---------------------------------------------------------------------------
+
+const TILE_SIZE = 256;
+export const MAP_WIDTH = 1200;
+export const MAP_HEIGHT = 456;
+
+const tileProviders: Record<Exclude<StaticMapProvider, "mapbox">, { url: (z: number, x: number, y: number) => string; maxZoom: number; attribution: string; format: "jpeg" | "png" }> = {
+  esri: {
+    url: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+    maxZoom: 18,
+    attribution: "Imagen satelital: Esri, Maxar, Earthstar Geographics y la comunidad GIS",
+    format: "jpeg",
+  },
+  osm: {
+    url: (z, x, y) => `${(process.env.NEXT_PUBLIC_OSM_TILE_URL?.trim() || "https://tile.openstreetmap.org/{z}/{x}/{y}.png").replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y))}`,
+    maxZoom: 19,
+    attribution: "© Colaboradores de OpenStreetMap (ODbL)",
+    format: "png",
+  },
+};
+
+const worldPixel = (lat: number, lng: number, zoom: number) => {
+  const scale = TILE_SIZE * 2 ** zoom;
+  const sin = Math.min(Math.max(Math.sin(lat * Math.PI / 180), -0.9999), 0.9999);
+  return {
+    x: (lng + 180) / 360 * scale,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale,
+  };
+};
+
+const metersPerPixel = (lat: number, zoom: number) => 156_543.03392 * Math.cos(lat * Math.PI / 180) / 2 ** zoom;
+
+async function fetchTile(url: string) {
+  const response = await fetch(url, {
+    headers: { "User-Agent": "DavidBastoRealEstate/1.0 (property report map)", Accept: "image/png,image/jpeg,image/*" },
+    signal: AbortSignal.timeout(8_000),
+    cache: "no-store",
+  });
+  const type = (response.headers.get("content-type") || "").toLowerCase();
+  if (!response.ok || !type.startsWith("image/")) throw new Error(`HTTP ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+function overlaySvg(width: number, height: number, center: { x: number; y: number }, radiusPx: number, pois: Array<{ x: number; y: number }>) {
+  const dots = pois.map(point => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="7" fill="#3b82f6" stroke="#ffffff" stroke-width="2.5"/>`).join("");
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+    <circle cx="${center.x}" cy="${center.y}" r="${radiusPx.toFixed(1)}" fill="#10251d" fill-opacity="0.12" stroke="#d4af37" stroke-width="4" stroke-dasharray="14 8"/>
+    ${dots}
+    <circle cx="${center.x}" cy="${center.y}" r="17" fill="#d4af37" stroke="#10251d" stroke-width="5"/>
+    <circle cx="${center.x}" cy="${center.y}" r="5" fill="#10251d"/>
+  </svg>`);
+}
+
+export async function buildTileStaticMap(
+  lat: number,
+  lng: number,
+  points: StaticMapPoint[],
+  provider: Exclude<StaticMapProvider, "mapbox">,
+  radiusMeters = 1_000,
+): Promise<StaticMapResult> {
+  const startedAt = Date.now();
+  const config = tileProviders[provider];
+  const base: StaticMapResult = {
+    image: null, reason: null, status: null, contentType: null, bytes: null, durationMs: 0, attempts: 1,
+    urlLength: null, overlaySyntaxValid: true, tokenType: "missing", provider, attribution: config.attribution,
+  };
+  // Largest zoom where the analysis radius still fits inside the frame.
+  let zoom = config.maxZoom;
+  while (zoom > 3 && radiusMeters / metersPerPixel(lat, zoom) > MAP_HEIGHT * 0.47) zoom -= 1;
+  const radiusPx = radiusMeters / metersPerPixel(lat, zoom);
+  const center = worldPixel(lat, lng, zoom);
+  const left = Math.round(center.x - MAP_WIDTH / 2);
+  const top = Math.round(center.y - MAP_HEIGHT / 2);
+  const firstX = Math.floor(left / TILE_SIZE);
+  const firstY = Math.floor(top / TILE_SIZE);
+  const lastX = Math.floor((left + MAP_WIDTH - 1) / TILE_SIZE);
+  const lastY = Math.floor((top + MAP_HEIGHT - 1) / TILE_SIZE);
+  const maxIndex = 2 ** zoom;
+  const jobs: Array<{ x: number; y: number }> = [];
+  for (let ty = firstY; ty <= lastY; ty += 1) for (let tx = firstX; tx <= lastX; tx += 1) jobs.push({ x: tx, y: ty });
+
+  try {
+    const { default: sharp } = await import("sharp");
+    const tiles: Array<{ input: Buffer; left: number; top: number }> = [];
+    let failures = 0;
+    for (let index = 0; index < jobs.length; index += 6) {
+      const batch = await Promise.allSettled(jobs.slice(index, index + 6).map(async job => {
+        if (job.y < 0 || job.y >= maxIndex) throw new Error("fuera de rango");
+        const wrappedX = ((job.x % maxIndex) + maxIndex) % maxIndex;
+        const buffer = await fetchTile(config.url(zoom, wrappedX, job.y));
+        return { input: buffer, left: (job.x - firstX) * TILE_SIZE, top: (job.y - firstY) * TILE_SIZE };
+      }));
+      for (const result of batch) {
+        if (result.status === "fulfilled") tiles.push(result.value);
+        else failures += 1;
+      }
+    }
+    if (!tiles.length || failures > jobs.length / 3) {
+      return { ...base, reason: `${provider === "esri" ? "Esri" : "OpenStreetMap"} no entregó suficientes teselas (${failures}/${jobs.length} fallidas).`, durationMs: Date.now() - startedAt };
+    }
+    const canvasWidth = (lastX - firstX + 1) * TILE_SIZE;
+    const canvasHeight = (lastY - firstY + 1) * TILE_SIZE;
+    const mosaic = await sharp({ create: { width: canvasWidth, height: canvasHeight, channels: 3, background: "#dfe4df" } })
+      .composite(tiles).png().toBuffer();
+    const cropped = await sharp(mosaic).extract({ left: left - firstX * TILE_SIZE, top: top - firstY * TILE_SIZE, width: MAP_WIDTH, height: MAP_HEIGHT }).toBuffer();
+    const poiPixels = points.slice(0, 25).map(point => {
+      const pixel = worldPixel(point.lat, point.lng, zoom);
+      return { x: pixel.x - left, y: pixel.y - top };
+    }).filter(point => point.x >= 0 && point.x <= MAP_WIDTH && point.y >= 0 && point.y <= MAP_HEIGHT);
+    const output = await sharp(cropped)
+      .composite([{ input: overlaySvg(MAP_WIDTH, MAP_HEIGHT, { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 }, radiusPx, poiPixels), left: 0, top: 0 }])
+      .jpeg({ quality: 82 })
+      .toBuffer();
+    console.info("[static-map]", JSON.stringify({ provider, zoom, tiles: tiles.length, failures, bytes: output.byteLength, ms: Date.now() - startedAt }));
+    return {
+      ...base,
+      image: `data:image/jpeg;base64,${output.toString("base64")}`,
+      status: 200, contentType: "image/jpeg", bytes: output.byteLength, durationMs: Date.now() - startedAt,
+    };
+  } catch (error) {
+    return { ...base, reason: `No se pudo componer el mapa (${provider}): ${error instanceof Error ? error.message : "error"}.`, durationMs: Date.now() - startedAt };
+  }
+}
+
+/**
+ * Report map with provider fallback:
+ * Mapbox satellite (when MAPBOX_ACCESS_TOKEN is set) → Esri World Imagery → OpenStreetMap.
+ */
+export async function buildStaticMap(
+  lat: number,
+  lng: number,
+  points: StaticMapPoint[],
+  token = process.env.MAPBOX_ACCESS_TOKEN?.trim() || "",
+): Promise<StaticMapResult> {
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180 || (lat === 0 && lng === 0)) {
+    return {
+      image: null, reason: "El inmueble no tiene coordenadas válidas para el mapa.", status: null, contentType: null, bytes: null,
+      durationMs: 0, attempts: 0, urlLength: null, overlaySyntaxValid: true, tokenType: token ? "unknown" : "missing", provider: null,
+    };
+  }
+  const log: string[] = [];
+  if (token) {
+    const mapbox = await buildMapboxStaticMap(lat, lng, points, token);
+    if (mapbox.image) return { ...mapbox, provider: "mapbox", attribution: "© Mapbox © OpenStreetMap", attemptsLog: log };
+    log.push(`Mapbox: ${mapbox.reason}`);
+  }
+  for (const provider of ["esri", "osm"] as const) {
+    const result = await buildTileStaticMap(lat, lng, points, provider);
+    if (result.image) return { ...result, attemptsLog: log };
+    log.push(result.reason || `${provider}: sin imagen`);
+  }
+  return {
+    image: null, reason: log.join(" · ") || "Ningún proveedor de mapas respondió.", status: null, contentType: null, bytes: null,
+    durationMs: 0, attempts: log.length, urlLength: null, overlaySyntaxValid: true, tokenType: token ? "unknown" : "missing", provider: null, attemptsLog: log,
   };
 }

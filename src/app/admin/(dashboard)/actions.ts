@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { syncPropertyIntegrations, type PropertySyncSummary } from "@/lib/integrations/propertySync";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AudioTour, ProjectDossier, VideoPresentation } from "@/data/properties";
 
@@ -182,6 +184,19 @@ function slugify(value: string) {
     .replace(/^-|-$/g, "") || `inmueble-${Date.now()}`;
 }
 
+/** Pull official (Croma) and OSM data after the response is sent, so saving stays fast. */
+function scheduleIntegrationSync(supabase: Awaited<ReturnType<typeof authorizedClient>>, propertyId: number) {
+  after(async () => {
+    try {
+      const summary = await syncPropertyIntegrations(supabase, propertyId);
+      console.info("[property-sync]", JSON.stringify(summary));
+      revalidatePath("/admin");
+    } catch (error) {
+      console.error("[property-sync] falló", propertyId, error instanceof Error ? error.message : error);
+    }
+  });
+}
+
 function refreshCatalog() {
   revalidatePath("/admin");
   revalidatePath("/buscar");
@@ -216,6 +231,7 @@ export async function createProperty(data: PropertyInput): Promise<ActionResult>
       const { error: featuredError } = await supabase.rpc("set_featured_property", { target_id: created.id });
       if (featuredError) throw featuredError;
     }
+    scheduleIntegrationSync(supabase, Number(created.id));
     refreshCatalog();
     return migrationPending ? { success: true, warning: migrationWarning, propertyId: Number(created.id) } : { success: true, propertyId: Number(created.id) };
   } catch (error) {
@@ -246,10 +262,25 @@ export async function updateProperty(id: number, data: PropertyInput): Promise<A
     const previousFiles = migrationPending ? (existing.images || []) : [...(existing.images || []), ...mediaUrls(existing.audio_tours), ...mediaUrls(existing.video_presentations)];
     const retainedFiles = migrationPending ? data.images : [...data.images, ...mediaUrls(data.audio_tours), ...mediaUrls(data.video_presentations)];
     await removeUnreferencedStorageFiles(supabase, previousFiles, retainedFiles);
+    scheduleIntegrationSync(supabase, id);
     refreshCatalog();
     return migrationPending ? { success: true, warning: migrationWarning, propertyId: id } : { success: true, propertyId: id };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "No se pudo actualizar el inmueble." };
+  }
+}
+
+/** Manual re-sync from the admin panel: queries Croma and OpenStreetMap again. */
+export async function resyncPropertyIntegrations(id: number): Promise<{ success: true; summary: PropertySyncSummary } | { success: false; error: string }> {
+  try {
+    if (!Number.isSafeInteger(id) || id < 1) throw new Error("El identificador del inmueble no es válido.");
+    const supabase = await authorizedClient();
+    const summary = await syncPropertyIntegrations(supabase, id, { force: true });
+    revalidatePath("/admin");
+    revalidatePath(`/admin/properties/${id}`);
+    return { success: true, summary };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo sincronizar el inmueble." };
   }
 }
 

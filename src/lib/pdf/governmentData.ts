@@ -3,90 +3,90 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { analyticsPoiCounts, analyticsPoiPoints } from "@/lib/geo/propertyAnalytics";
 import { makePoiHeatmap, type LivePoiResult } from "@/lib/geo/overpassClient";
 import { buildStaticMap } from "@/lib/pdf/staticMap";
+import {
+  asObject, cromaConfigured, fetchTerritorialData, lookupCadastralByNumber, lookupCadastralByPoint,
+  managerIsIgac, numberOrNull, type CadastralLookup, type JsonRecord, type TerritorialData,
+} from "@/lib/integrations/croma";
 
-type JsonRecord = Record<string, unknown>;
 type PoiCell = CadastralReportData["geoSpatialContext"]["poiCells"][number];
 
 export class CadastralValidationError extends Error {}
 
-const numberOrNull = (value: unknown): number | null => {
-  if (value === null || value === undefined || value === "") return null;
-  const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) ? number : null;
+const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
+const CACHE_STATUSES = new Set(["verified", "not_found", "manager_not_igac", "no_identifier"]);
+
+type OfficialSnapshot = {
+  source: "cache" | "live";
+  status: string | null;
+  message: string | null;
+  method: CadastralLookup["method"];
+  found: boolean | null;
+  parcel: JsonRecord | null;
+  checkedAt: string | null;
+  servedFrom: string | null;
+  manager: string | null;
+  territorial: TerritorialData | null;
 };
 
-const asObject = (value: unknown): JsonRecord | null =>
-  value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
-
-function firstResult(payload: JsonRecord) {
-  const results = Array.isArray(payload.results) ? payload.results : [];
-  return asObject(results[0]);
+function territorialFromCache(value: unknown): TerritorialData | null {
+  const row = asObject(value);
+  if (!row || !Object.keys(row).length) return null;
+  return {
+    asOf: text(row.as_of),
+    census: asObject(row.census) as TerritorialData["census"],
+    ipm: asObject(row.ipm) as TerritorialData["ipm"],
+    cadastralStats: asObject(row.cadastral_stats) as TerritorialData["cadastralStats"],
+    errors: Array.isArray(row.errors) ? row.errors.map(String) : [],
+  };
 }
 
-async function cromaPost(path: string, body: JsonRecord): Promise<JsonRecord> {
-  const key = process.env.CROMA_API_KEY?.trim();
-  if (!key) throw new Error("Croma no está configurado.");
-  const response = await fetch(`https://api.croma.run${path}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok) throw new Error(`Croma respondió ${response.status}.`);
-  const payload = await response.json() as JsonRecord;
-  // Croma envelopes successful API responses inside `data`; normalize once so
-  // the report can read the documented `found`, `property` and `results` fields.
-  return asObject(payload.data) ?? payload;
-}
-
-async function lookupCadastral(property: CadastralProperty) {
-  const cadastralId = (property.cadastral_id || "").trim();
-  const normalized = cadastralId.replace(/[^\d]/g, "");
-  // The public IGAC portal supports legacy 20-digit identifiers, but Croma's
-  // property endpoint currently validates cadastral_number as 30 digits.
-  // Keep zeroes intact and only send identifiers this API accepts.
-  const cromaCadastralNumber = /^\d{30}$/.test(normalized);
-  let identifierMiss: JsonRecord | null = null;
-  if (cromaCadastralNumber) {
-    try {
-      const byNumber = await cromaPost("/co/igac/property/v1", { cadastral_number: normalized });
-      if (byNumber.found === true && asObject(byNumber.property)) return { payload: byNumber, method: "cadastral_id" as const };
-      if (byNumber.found === false) identifierMiss = byNumber;
-    } catch {
-      // Una consulta por identificador no debe impedir el fallback a coordenadas.
-    }
+/** Prefer the data the admin sync stored; fall back to live Croma queries. */
+async function officialSnapshot(property: CadastralProperty, supabase: SupabaseClient, municipalityCode: string | null, validPoint: boolean): Promise<OfficialSnapshot> {
+  const { data: cache } = await supabase.from("property_official_data").select("*").eq("property_id", property.id).maybeSingle();
+  if (cache && CACHE_STATUSES.has(String(cache.status))) {
+    const verified = cache.status === "verified";
+    return {
+      source: "cache",
+      status: String(cache.status),
+      message: text(cache.message),
+      method: (cache.lookup_method as CadastralLookup["method"]) || "none",
+      found: verified ? true : cache.status === "not_found" ? false : null,
+      parcel: verified ? {
+        cadastral_number: cache.cadastral_number, previous_cadastral_number: cache.previous_cadastral_number,
+        municipality_code: cache.municipality_code, municipality: cache.municipality, address: cache.address,
+        appraisal: cache.appraisal, built_area_m2: cache.built_area_m2, land_area_m2: cache.land_area_m2,
+        economic_destination: cache.economic_destination, vigencia: cache.vigencia, buildings: cache.buildings,
+      } : null,
+      checkedAt: text(cache.source_checked_at) || text(cache.synced_at),
+      servedFrom: "caché sincronizada desde Croma (IGAC/DANE)",
+      manager: text(cache.cadastral_manager),
+      territorial: territorialFromCache(cache.territorial),
+    };
   }
 
-  // CHIP is a Bogotá-specific identifier. Without a documented, authorized
-  // CHIP lookup adapter, never substitute a nearby coordinate result as if it
-  // were the exact parcel.
-  if (property.chip?.trim() && !cromaCadastralNumber) {
-    return { payload: null, method: "none" as const };
-  }
+  const empty: OfficialSnapshot = { source: "live", status: null, message: null, method: "none", found: null, parcel: null, checkedAt: null, servedFrom: null, manager: null, territorial: null };
+  if (!cromaConfigured()) return { ...empty, message: "CROMA_API_KEY no está configurada en el servidor." };
 
-  const lat = Number(property.lat);
-  const lng = Number(property.lng);
-  const validCoordinates = Number.isFinite(lat) && lat >= -90 && lat <= 90
-    && Number.isFinite(lng) && lng >= -180 && lng <= 180 && !(lat === 0 && lng === 0);
-  if (validCoordinates) {
-    try {
-      const byPoint = await cromaPost("/co/igac/property-by-point/v1", { latitude: lat, longitude: lng });
-      return { payload: byPoint, method: "coordinates" as const };
-    } catch {
-      return { payload: identifierMiss, method: identifierMiss ? "cadastral_id" as const : "none" as const };
-    }
-  }
-  return { payload: identifierMiss, method: identifierMiss ? "cadastral_id" as const : cadastralId ? "cadastral_id" as const : "none" as const };
-}
-
-function lookupTerritorialData(municipalityCode: string | null) {
-  if (!municipalityCode) return Promise.resolve(null);
-  return Promise.allSettled([
-    cromaPost("/co/dane/census-municipalities/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }),
-    cromaPost("/co/dane/municipal-ipm/v1", { territory_code: municipalityCode, page: 1, per_page: 1 }),
-    cromaPost("/co/igac/municipal-statistics/v1", { municipality_code: municipalityCode }),
-  ] as const);
+  const territorial = municipalityCode ? await fetchTerritorialData(municipalityCode).catch(() => null) : null;
+  const manager = territorial?.cadastralStats?.manager ?? null;
+  const npn = [property.national_cadastral_number, property.cadastral_id]
+    .map(value => (value || "").replace(/\D/g, "")).find(value => /^\d{30}$/.test(value)) || null;
+  let lookup: CadastralLookup | null = null;
+  try {
+    if (npn) lookup = await lookupCadastralByNumber(npn);
+    if ((!lookup || lookup.found !== true) && validPoint && managerIsIgac(manager)) lookup = await lookupCadastralByPoint(property.lat, property.lng);
+  } catch { /* reported below as a warning */ }
+  return {
+    ...empty,
+    status: lookup ? (lookup.found ? "verified" : "not_found") : !managerIsIgac(manager) ? "manager_not_igac" : null,
+    method: lookup?.method ?? "none",
+    found: lookup?.found ?? null,
+    parcel: lookup?.found ? lookup.property : null,
+    checkedAt: lookup?.checkedAt ?? null,
+    servedFrom: lookup?.servedFrom ?? null,
+    manager,
+    territorial,
+  };
 }
 
 export async function getGovernmentReportData(property: CadastralProperty, supabase: SupabaseClient) {
@@ -98,25 +98,20 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   if (declaredMunicipalityCode && !/^\d{5}$/.test(declaredMunicipalityCode)) {
     throw new CadastralValidationError("El código DIVIPOLA registrado en la ficha no tiene cinco dígitos. Corrígelo antes de generar el informe.");
   }
-  // Start independent, coordinate-based sources together with the cadastral
-  // lookup. This removes the previous network waterfall for the usual case
-  // where the property already has its municipality code.
-  const cadastralLookupPromise = lookupCadastral(property);
-  const analyticsPromise = supabase.from("property_geo_analytics")
-    .select("accessibility,pois,urban_norm,search_radius_m,source_name,source_updated_at,status,updated_at")
-    .eq("property_id", property.id)
-    .maybeSingle();
-  const declaredTerritorialPromise = lookupTerritorialData(declaredMunicipalityCode);
-  const [cadastralLookup, analyticsResult, declaredTerritorialResult] = await Promise.all([
-    cadastralLookupPromise,
-    analyticsPromise,
-    declaredTerritorialPromise,
+
+  const [snapshot, analyticsResult] = await Promise.all([
+    officialSnapshot(property, supabase, declaredMunicipalityCode, coordinatesValid),
+    supabase.from("property_geo_analytics")
+      .select("accessibility,pois,urban_norm,search_radius_m,source_name,source_updated_at,status,updated_at")
+      .eq("property_id", property.id)
+      .maybeSingle(),
   ]);
+
   const geoCache = analyticsResult.error ? null : analyticsResult.data as Record<string, unknown> | null;
   const storedPois = geoCache?.pois && typeof geoCache.pois === "object" ? geoCache.pois as Record<string, unknown> : {};
   const storedPoints = analyticsPoiPoints(storedPois.points);
   const storedCounts = analyticsPoiCounts(storedPois.counts);
-  const livePoiResult: LivePoiResult | null = geoCache?.status === "ready" && typeof geoCache.source_updated_at === "string" ? {
+  const livePois: LivePoiResult | null = geoCache?.status === "ready" && typeof geoCache.source_updated_at === "string" ? {
     source: "OpenStreetMap",
     available: true,
     radiusMeters: Number(geoCache.search_radius_m) || 1000,
@@ -128,32 +123,23 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
     truncated: storedPois.truncated === true,
     warning: storedPois.truncated === true ? "La fuente limitó los puntos guardados; el conteo puede ser parcial." : null,
   } : null;
-  const officialProperty = cadastralLookup.payload ? asObject(cadastralLookup.payload.property) : null;
-  const externalMunicipalityCode = typeof officialProperty?.municipality_code === "string" && /^\d{5}$/.test(officialProperty.municipality_code)
-    ? officialProperty.municipality_code : null;
-  if (declaredMunicipalityCode && externalMunicipalityCode && declaredMunicipalityCode !== externalMunicipalityCode) {
-    throw new CadastralValidationError(`El DIVIPOLA de la ficha (${declaredMunicipalityCode}) no coincide con la consulta catastral (${externalMunicipalityCode}). Revisa ubicación y coordenadas.`);
-  }
-  const municipalityCode = externalMunicipalityCode || declaredMunicipalityCode;
-  const npnCandidates = [
-    property.national_cadastral_number,
-    property.cadastral_id,
-    typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number : null,
-  ].map(value => (value || "").replace(/\D/g, "")).filter(value => /^\d{30}$/.test(value));
-  const npnPrefix = npnCandidates[0]?.slice(0, 5) || null;
-  if (npnPrefix && !municipalityCode) {
-    throw new CadastralValidationError("No se pudo confirmar el municipio del Número Predial Nacional. Registra el código DIVIPOLA de cinco dígitos en la ficha o verifica la consulta catastral.");
-  }
-  if (npnPrefix && npnCandidates.some(candidate => candidate.slice(0, 5) !== municipalityCode)) {
-    throw new CadastralValidationError(`El prefijo ${npnPrefix} del Número Predial Nacional no coincide con el código DIVIPOLA ${municipalityCode}. Verifica el número y la ubicación antes de generar el informe.`);
-  }
-  const municipality = typeof officialProperty?.municipality === "string" ? officialProperty.municipality : property.municipality;
 
-  const territorialResults = declaredTerritorialResult || await lookupTerritorialData(municipalityCode);
-  const censusResult = territorialResults?.[0] || { status: "fulfilled" as const, value: null };
-  const ipmResult = territorialResults?.[1] || { status: "fulfilled" as const, value: null };
-  const municipalStatsResult = territorialResults?.[2] || { status: "fulfilled" as const, value: null };
-  const livePois = livePoiResult;
+  // Parcel data is only used when it belongs to the declared municipality.
+  let parcel = snapshot.parcel;
+  const parcelMunicipalityCode = text(parcel?.municipality_code);
+  if (parcel && declaredMunicipalityCode && parcelMunicipalityCode && parcelMunicipalityCode !== declaredMunicipalityCode) {
+    warnings.push(`La consulta catastral identificó un predio en ${text(parcel.municipality) || parcelMunicipalityCode} (${parcelMunicipalityCode}), distinto del municipio de la ficha (${declaredMunicipalityCode}). Se omitieron sus datos; revisa las coordenadas.`);
+    parcel = null;
+  }
+  const municipalityCode = declaredMunicipalityCode || parcelMunicipalityCode;
+  const municipality = text(parcel?.municipality) || property.municipality;
+
+  const territorial = snapshot.territorial;
+  const census = territorial?.census ?? null;
+  const ipm = territorial?.ipm ?? null;
+  const stats = territorial?.cadastralStats ?? null;
+  const manager = snapshot.manager ?? stats?.manager ?? null;
+
   const poiSearchRadiusUsed = Number(geoCache?.search_radius_m) || 1_000;
   const poiCounts = livePois?.counts || { transport: 0, commercial: 0, health: 0, education: 0, parks: 0 };
   const poiHeatmap = makePoiHeatmap(livePois?.points || [], poiSearchRadiusUsed, 300);
@@ -163,56 +149,38 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
     count: feature.properties.poi_count,
   }));
 
-  const census = censusResult.status === "fulfilled" ? censusResult.value : null;
-  const censusRow = census ? firstResult(census) : null;
-  const population = asObject(censusRow?.population);
-  const households = asObject(censusRow?.households);
-  const dwellings = asObject(censusRow?.dwellings);
-  const stratum = asObject(censusRow?.estrato);
-  const ipm = ipmResult.status === "fulfilled" ? firstResult(ipmResult.value || {}) : null;
-  const statsPayload = municipalStatsResult.status === "fulfilled" ? municipalStatsResult.value : null;
-  const municipalStats = statsPayload ? firstResult(statsPayload) : null;
-  const distribution = stratum ? Object.fromEntries(Object.entries(stratum).flatMap(([key, value]) => {
-    const count = numberOrNull(value);
-    return count === null ? [] : [[key, count]];
-  })) : null;
-
-  if (property.chip?.trim() && !/^\d{30}$/.test((property.national_cadastral_number || property.cadastral_id || "").replace(/\D/g, ""))) {
-    warnings.push("El CHIP no se consultó como identificador exacto: se requiere integrar un servicio autorizado de Catastro Bogotá. No se sustituyó con una búsqueda por coordenadas. Registra el Número Predial Nacional de 30 dígitos o verifica el certificado catastral.");
-  } else if (!cadastralLookup.payload) warnings.push("No fue posible consultar los registros catastrales del IGAC en este momento.");
-  else if (cadastralLookup.payload.found === false) warnings.push("No se encontraron registros públicos para esta cédula catastral o ubicación.");
-  if (censusResult.status === "rejected" || ipmResult.status === "rejected") warnings.push("No se pudieron consultar algunos indicadores territoriales del DANE.");
-  if (municipalStatsResult.status === "rejected") warnings.push("No fue posible obtener las estadísticas municipales catastrales del IGAC.");
-  if (municipalityCode && (!census || !ipm)) warnings.push("Los indicadores municipales DANE no están disponibles para este código territorial.");
+  // Warnings, most useful first.
+  if (snapshot.status === "manager_not_igac" || (!parcel && manager && !managerIsIgac(manager))) {
+    warnings.push(`El catastro de ${municipality || "este municipio"} lo administra ${manager || "un gestor distinto del IGAC"}; el IGAC no publica sus predios. Avalúo, áreas y número predial deben tomarse del certificado catastral.`);
+  } else if (snapshot.status === "not_found" || snapshot.found === false) {
+    warnings.push(snapshot.method === "cadastral_id" ? "El Número Predial Nacional registrado no aparece en el IGAC." : "No hay un predio IGAC en las coordenadas registradas.");
+  } else if (snapshot.status === "verified" && snapshot.method === "coordinates") {
+    warnings.push("Predio identificado por coordenadas: confirma con el certificado catastral que corresponde al inmueble.");
+  } else if (!snapshot.status) {
+    warnings.push(snapshot.message || "No fue posible consultar los registros catastrales en este momento.");
+  }
+  if (!municipalityCode) warnings.push("La ficha no tiene código DIVIPOLA: guárdala de nuevo en el panel para resolverlo automáticamente.");
+  else if (!census || !ipm) warnings.push("Algunos indicadores municipales DANE no están disponibles para este código territorial.");
   if (analyticsResult.error) warnings.push("La caché territorial no está disponible para este informe.");
-  else if (coordinatesValid && !livePois) warnings.push("El análisis de puntos de interés aún no está guardado para este inmueble.");
+  else if (coordinatesValid && !livePois) warnings.push("El análisis de puntos de interés aún no está guardado: usa “Sincronizar” en el panel de administración.");
   if (livePois?.warning) warnings.push(livePois.warning);
   if (!coordinatesValid) warnings.push("Este inmueble no tiene coordenadas válidas para mostrar el mapa ni consultar puntos de interés.");
-  const normalizedCadastralId = (property.cadastral_id || "").replace(/[^\d]/g, "");
-  if (cadastralLookup.method === "coordinates" && property.cadastral_id && /^\d{20}$/.test(normalizedCadastralId)) {
-    warnings.push("El número predial antiguo de 20 dígitos es válido en el portal del IGAC, pero la API de Croma requiere el número predial nacional de 30 dígitos para buscar por número; se consultó por coordenadas.");
-  } else if (cadastralLookup.method === "coordinates" && property.cadastral_id && !/^\d{30}$/.test(normalizedCadastralId)) {
-    warnings.push("La API de Croma requiere el número predial nacional de 30 dígitos para buscar por número; se consultó por coordenadas como alternativa.");
-  }
-  const requestedMunicipality = (property.municipality || property.location).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  const returnedMunicipality = (municipality || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  if (cadastralLookup.method === "coordinates" && cadastralLookup.payload?.found === true && requestedMunicipality && returnedMunicipality && !returnedMunicipality.includes(requestedMunicipality.split(",")[0].trim())) {
-    warnings.push(`La consulta por coordenadas identificó ${municipality}, pero el inmueble está registrado en ${property.municipality || property.location}. Verifica las coordenadas antes de usar este resultado en la tasación.`);
-  }
 
-  const found = typeof cadastralLookup.payload?.found === "boolean" ? cadastralLookup.payload.found : null;
   const mapResult = await buildStaticMap(property.lat, property.lng, livePois?.topPoints || []);
-  if (!mapResult.image) warnings.push(`Mapa no disponible: ${mapResult.reason || "No se obtuvo una imagen satelital."}`);
-  const reportedCadastralNumber = typeof officialProperty?.cadastral_number === "string" ? officialProperty.cadastral_number.replace(/\D/g, "") : "";
+  if (!mapResult.image) warnings.push(`Mapa no disponible: ${mapResult.reason || "No se obtuvo una imagen."}`);
+
+  const reportedCadastralNumber = (text(parcel?.cadastral_number) || "").replace(/\D/g, "");
   const cadastralNumber = /^\d{30}$/.test(reportedCadastralNumber) ? reportedCadastralNumber : null;
-  if (officialProperty?.cadastral_number && !cadastralNumber) warnings.push("La fuente devolvió un Número Predial Nacional con formato distinto de 30 dígitos; se omitió del informe.");
+  const vigencia = asObject(parcel?.vigencia);
+  const buildings = Array.isArray(parcel?.buildings) ? parcel.buildings.map(asObject).filter((item): item is JsonRecord => Boolean(item)) : [];
+
   const data: CadastralReportData = {
     metadata: {
       reportId: `DB-${property.id}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
       issueDate: new Date().toISOString(),
       requestedBy: "Usuario de la plataforma",
       evaluator: "David Basto Real Estate · Informe automatizado de consulta pública",
-      isMacroLotWarning: cadastralLookup.method === "coordinates",
+      isMacroLotWarning: snapshot.method === "coordinates",
     },
     subjectProperty: {
       id: property.id,
@@ -240,28 +208,43 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       galleryImagesBase64: [],
       staticMapBase64: mapResult.image,
       mapUnavailableReason: mapResult.reason,
+      mapAttribution: mapResult.attribution ?? null,
     },
     officialData: {
-      recordFound: found,
-      lookupMethod: cadastralLookup.method,
+      recordFound: parcel ? true : snapshot.found,
+      lookupMethod: snapshot.method,
       cadastralNumber,
-      cadastralAppraisal: numberOrNull(property.cadastral_appraisal) ?? numberOrNull(officialProperty?.appraisal),
-      officialBuiltArea: numberOrNull(property.official_built_area) ?? numberOrNull(officialProperty?.built_area_m2),
-      officialLotArea: numberOrNull(property.official_lot_area) ?? numberOrNull(officialProperty?.land_area_m2),
-      economicDestination: typeof officialProperty?.economic_destination === "string" ? officialProperty.economic_destination : null,
-      stratum: "Sin dato",
+      cadastralAppraisal: numberOrNull(property.cadastral_appraisal) ?? numberOrNull(parcel?.appraisal),
+      officialBuiltArea: numberOrNull(property.official_built_area) ?? numberOrNull(parcel?.built_area_m2),
+      officialLotArea: numberOrNull(property.official_lot_area) ?? numberOrNull(parcel?.land_area_m2),
+      economicDestination: text(parcel?.economic_destination),
+      stratum: property.stratum !== null && property.stratum !== undefined ? `Estrato ${property.stratum} (ficha)` : "Sin dato",
       municipality,
       municipalityCode,
-      checkedAt: typeof cadastralLookup.payload?.checked_at === "string" ? cadastralLookup.payload.checked_at : null,
-      servedFrom: typeof cadastralLookup.payload?.served_from === "string" ? cadastralLookup.payload.served_from : null,
-      municipalStatistics: municipalStats ? {
-        year: numberOrNull(municipalStats.year),
-        appraisalTotal: numberOrNull(municipalStats.appraisal_total),
-        propertyCount: numberOrNull(municipalStats.property_count),
+      checkedAt: snapshot.checkedAt,
+      servedFrom: snapshot.servedFrom,
+      cadastralManager: manager,
+      parcelAddress: text(parcel?.address),
+      cadastralUpdate: vigencia ? {
+        status: text(vigencia.status),
+        updateYear: numberOrNull(vigencia.update_year),
+        yearsSinceUpdate: numberOrNull(vigencia.years_since_update),
+        zone: text(vigencia.zone),
+      } : stats ? { status: stats.urbanStatus, updateYear: stats.urbanUpdateYear, yearsSinceUpdate: null, zone: "urban" } : null,
+      buildings: buildings.slice(0, 6).map(item => ({
+        use: text(item.use) || "Sin uso registrado",
+        areaM2: numberOrNull(item.area_m2),
+        floors: numberOrNull(item.floors),
+        bathrooms: numberOrNull(item.bathrooms),
+      })),
+      municipalStatistics: stats ? {
+        year: stats.year,
+        appraisalTotal: stats.appraisalTotal,
+        propertyCount: stats.propertyCount,
       } : null,
     },
     geoSpatialContext: {
-      // The current Croma/IGAC point lookup does not provide a point-specific municipal POT certificate.
+      // No municipal POT API is integrated yet; never invent zoning values.
       potNormative: {
         landUse: "Sin dato normativo POT verificado",
         maxHeight: "Sin dato normativo POT verificado",
@@ -274,22 +257,22 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       poiStatus: !coordinatesValid
         ? "Sin coordenadas válidas"
         : !livePois?.available
-          ? "En validación territorial"
+          ? "Pendiente de sincronización"
           : livePois.total === 0
             ? "Sin puntos registrados en el radio consultado"
             : `${livePois.total} puntos registrados en el radio consultado`,
       poiSource: livePois?.available ? "OpenStreetMap" : "No disponible",
       poiFetchedAt: livePois?.available ? livePois.fetchedAt : null,
       dane: {
-        censusAvailable: censusRow !== null,
+        censusAvailable: census !== null,
         ipmAvailable: ipm !== null,
-        asOf: typeof census?.as_of === "string" ? census.as_of : null,
-        censusYear: numberOrNull(censusRow?.year),
-        population: numberOrNull(population?.total),
-        households: numberOrNull(households?.total),
-        dwellings: numberOrNull(dwellings?.total),
-        municipalStratumDistribution: distribution,
-        ipm: numberOrNull(ipm?.ipm),
+        asOf: territorial?.asOf ?? null,
+        censusYear: census?.year ?? null,
+        population: census?.population ?? null,
+        households: census?.households ?? null,
+        dwellings: census?.dwellings ?? null,
+        municipalStratumDistribution: census?.stratumDistribution ?? null,
+        ipm: ipm?.total ?? null,
       },
     },
     warnings,

@@ -31,8 +31,8 @@ const styles = StyleSheet.create({
   reportBrandName: { color: forest, fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 0.5 },
   reportBrandSub: { color: "#9a793d", fontSize: 6.5, letterSpacing: 0.8, marginTop: 2 },
   reportHeaderMeta: { color: muted, fontSize: 6.5, textAlign: "right" },
-  reportHeroImage: { width: "100%", height: 138, objectFit: "cover", borderRadius: 4, marginBottom: 9 },
-  reportHeroPlaceholder: { width: "100%", height: 138, backgroundColor: forest, borderRadius: 4, padding: 18, justifyContent: "flex-end", gap: 6, marginBottom: 9 },
+  reportHeroImage: { width: "100%", height: 122, objectFit: "cover", borderRadius: 4, marginBottom: 9 },
+  reportHeroPlaceholder: { width: "100%", height: 122, backgroundColor: forest, borderRadius: 4, padding: 18, justifyContent: "flex-end", gap: 6, marginBottom: 9 },
   reportMetrics: { flexDirection: "row", gap: 6, marginBottom: 13 },
   reportMetric: { width: "24%", backgroundColor: pale, borderTopWidth: 2, borderTopColor: gold, padding: 8 },
   reportMetricLabel: { color: muted, fontSize: 5.5, letterSpacing: 0.5, marginBottom: 5 },
@@ -48,7 +48,8 @@ const styles = StyleSheet.create({
   reportCell: { width: "34%", color: ink, fontSize: 7, lineHeight: 1.25, paddingRight: 5 },
   reportLabel: { width: "29%", fontFamily: "Helvetica-Bold" },
   reportDetail: { color: muted },
-  reportMap: { width: "100%", height: 150, objectFit: "cover", marginBottom: 9, borderRadius: 4 },
+  reportMap: { width: "100%", height: 175, objectFit: "cover", marginBottom: 3, borderRadius: 4 },
+  reportMapCaption: { fontSize: 6, color: "#7b8580", marginBottom: 9 },
   reportMapPlaceholder: { backgroundColor: pale, borderWidth: 1, borderColor: line, alignItems: "center", justifyContent: "center", color: muted, fontSize: 8 },
   reportContact: { backgroundColor: forest, padding: 9, marginTop: 7 },
   reportContactTitle: { color: gold, fontSize: 7, fontFamily: "Helvetica-Bold", marginBottom: 4 },
@@ -81,7 +82,7 @@ const styles = StyleSheet.create({
   metric: { width: "31%", backgroundColor: forest, padding: 12, borderRadius: 4 },
   metricLabel: { color: "#c6d0cb", fontSize: 6.5, marginBottom: 6 },
   metricValue: { color: "#fff", fontSize: 9 },
-  callout: { backgroundColor: pale, borderLeftWidth: 3, borderLeftColor: gold, padding: 11, marginVertical: 8 },
+  callout: { backgroundColor: pale, borderLeftWidth: 3, borderLeftColor: gold, padding: 8, marginVertical: 5 },
   calloutText: { color: ink, fontSize: 8, lineHeight: 1.5 },
   map: { width: "100%", height: 150, objectFit: "cover", borderRadius: 5 },
   mapPlaceholder: { height: 150, backgroundColor: pale, borderRadius: 5, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: line },
@@ -125,7 +126,7 @@ const styles = StyleSheet.create({
 function Footer({ data, darkMode = false }: { data: CadastralReportData; darkMode?: boolean }) {
   return <View style={darkMode ? styles.financeFooter : styles.footer} fixed>
     <Text>DAVID BASTO REAL ESTATE · Informe predial orientativo</Text>
-    <Text>{data.metadata.reportId} · <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`}/></Text>
+    <Text render={({ pageNumber, totalPages }) => `${data.metadata.reportId} · Página ${pageNumber} de ${totalPages}`}/>
   </View>;
 }
 
@@ -172,11 +173,11 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
     <View style={styles.section}>
         <Text style={styles.sectionTitle}>PUNTOS DE INTERÉS · RADIO DE {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} M</Text>
       <View style={styles.facts}>
-        <Fact label="TRANSPORTE" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.transport) : "En validación territorial"}/>
-        <Fact label="EDUCACIÓN" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.education) : "En validación territorial"}/>
-        <Fact label="COMERCIO" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.commercial) : "En validación territorial"}/>
-        <Fact label="SALUD" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.health) : "En validación territorial"}/>
-        <Fact label="PARQUES Y RECREACIÓN" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.parks) : "En validación territorial"}/>
+        <Fact label="TRANSPORTE" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.transport) : "Sin dato municipal"}/>
+        <Fact label="EDUCACIÓN" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.education) : "Sin dato municipal"}/>
+        <Fact label="COMERCIO" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.commercial) : "Sin dato municipal"}/>
+        <Fact label="SALUD" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.health) : "Sin dato municipal"}/>
+        <Fact label="PARQUES Y RECREACIÓN" value={data.geoSpatialContext.poiAvailable ? String(poiCounts.parks) : "Sin dato municipal"}/>
       </View>
       <Text style={styles.sourceNote}>Fuente: {data.geoSpatialContext.poiSource}. Se lee la última consulta guardada en la caché territorial del inmueble. Los datos de OpenStreetMap pueden estar incompletos y se distribuyen bajo ODbL.{data.geoSpatialContext.poiFetchedAt ? ` Consulta: ${dateLabel(data.geoSpatialContext.poiFetchedAt)}.` : ""}</Text>
     </View>
@@ -264,14 +265,17 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
         <ReportTableRow label="Número Predial Nacional (30D)" value={cadastralNumber} detail={data.officialData.cadastralNumber || "No disponible reportado por fuente"}/>
         <ReportTableRow label="Matrícula inmobiliaria" value={property.legal.realEstateId} detail="Registro suministrado en ficha"/>
         <ReportTableRow label="Coordenadas WGS84" value={property.coordinates ? `${property.coordinates.lat.toFixed(6)}, ${property.coordinates.lng.toFixed(6)}` : "Sin dato"} detail={property.coordinates ? "Punto georreferenciado" : "Sin coordenadas"}/>
-        <ReportTableRow label="Área construida" value={areaLabel(property.listedAreaM2)} detail={areaLabel(data.officialData.officialBuiltArea)}/>
+        <ReportTableRow label="Área (ficha / catastro)" value={`${areaLabel(property.listedAreaM2)} declarada`} detail={data.officialData.officialBuiltArea !== null || data.officialData.officialLotArea !== null ? `Construida ${areaLabel(data.officialData.officialBuiltArea)} · terreno ${areaLabel(data.officialData.officialLotArea)}` : "Sin dato oficial"}/>
         <ReportTableRow label="Estrato / habitaciones" value={`${property.stratum} / ${property.bedrooms}`} detail={`${data.officialData.stratum} / ${property.bedrooms} habitaciones registradas`}/>
         <ReportTableRow label="Baños / parqueaderos / depósitos" value={`${property.bathrooms} / ${property.garages} / ${property.deposits}`} detail="Características de la ficha"/>
         <ReportTableRow label="Municipio / Código DIVIPOLA" value={property.address} detail={`${data.officialData.municipality || "Sin dato"}${data.officialData.municipalityCode ? ` (${data.officialData.municipalityCode})` : ""}`}/>
+        <ReportTableRow label="Gestor catastral / vigencia" value={data.officialData.cadastralManager || "Sin dato"} detail={data.officialData.cadastralUpdate ? `${data.officialData.cadastralUpdate.status || "Sin estado"}${data.officialData.cadastralUpdate.updateYear ? ` · actualización ${data.officialData.cadastralUpdate.updateYear}` : ""}` : "Sin dato"}/>
+        {data.officialData.parcelAddress && <ReportTableRow label="Dirección catastral" value={data.officialData.parcelAddress} detail="Reportada por el IGAC"/>}
+        {data.officialData.buildings.length > 0 && <ReportTableRow label="Construcciones catastrales" value={`${data.officialData.buildings.length} unidad(es)`} detail={data.officialData.buildings.slice(0, 3).map(item => `${item.use}${item.areaM2 !== null ? ` ${areaLabel(item.areaM2)}` : ""}${item.floors ? ` · ${item.floors} piso(s)` : ""}`).join(" | ")}/>}
       </View>
       {property.description && <View style={styles.section}><Text style={styles.reportSectionTitle}>DESCRIPCIÓN DEL INMUEBLE</Text><Text style={{ color: muted, fontSize: 7.5, lineHeight: 1.35 }}>{property.description}</Text></View>}
-      {property.dossierSections.length > 0 && <View style={styles.section}><Text style={styles.reportSectionTitle}>CARACTERÍSTICAS Y DISTRIBUCIÓN</Text>{property.dossierSections.slice(0, 3).map((section, index) => <View key={`${section.title}-${index}`} style={{ marginBottom: 4 }}><Text style={{ color: forest, fontSize: 7, fontFamily: "Helvetica-Bold", marginBottom: 2 }}>{section.title}</Text>{section.description && <Text style={{ color: muted, fontSize: 6.5, lineHeight: 1.25 }}>{section.description}</Text>}{section.items?.slice(0, 4).map((item, itemIndex) => <Text key={`${index}-${itemIndex}`} style={{ color: ink, fontSize: 6.5, lineHeight: 1.2 }}>• {item}</Text>)}</View>)}</View>}
-      <View style={styles.callout}><Text style={styles.calloutText}>Los datos externos se consultan al generar el informe y no se almacenan en la plataforma. El avalúo catastral es una referencia fiscal, no un avalúo comercial. Si una fuente no responde o no encuentra el predio, se indica “Sin dato”.</Text></View>
+      {property.dossierSections.length > 0 && <View style={styles.section} wrap={false}><Text style={styles.reportSectionTitle}>CARACTERÍSTICAS Y DISTRIBUCIÓN</Text><View style={{ flexDirection: "row", gap: 10 }}>{property.dossierSections.slice(0, 3).map((section, index) => <View key={`${section.title}-${index}`} style={{ flex: 1 }}><Text style={{ color: forest, fontSize: 7, fontFamily: "Helvetica-Bold", marginBottom: 2 }}>{section.title}</Text>{section.description && <Text style={{ color: muted, fontSize: 6.5, lineHeight: 1.25 }}>{section.description}</Text>}{section.items?.slice(0, 4).map((item, itemIndex) => <Text key={`${index}-${itemIndex}`} style={{ color: ink, fontSize: 6.5, lineHeight: 1.2 }}>• {item}</Text>)}</View>)}</View></View>}
+      <Text style={styles.sourceNote}>Los datos oficiales (IGAC/DANE vía Croma) se sincronizan cuando el administrador guarda la ficha y se consultan en vivo si aún no existen. El avalúo catastral es una referencia fiscal, no un avalúo comercial. Si una fuente no responde o no encuentra el predio, se indica “Sin dato”.</Text>
       <Footer data={data}/>
     </Page>
 
@@ -279,26 +283,27 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
       <ReportHeader section="ANÁLISIS NORMATIVO, ESPACIAL Y FUENTES PÚBLICAS" data={data}/>
       <Text style={styles.reportSectionTitle}>03 · ANÁLISIS NORMATIVO Y ESPACIAL (EL PREDIO Y SU ENTORNO)</Text>
       {property.staticMapBase64 ? <Image src={property.staticMapBase64} style={styles.reportMap}/> : <View style={[styles.reportMap,styles.reportMapPlaceholder]}><Text>Mapa no disponible: {property.mapUnavailableReason || "causa no identificada"} · Radio de análisis {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} m</Text></View>}
+      {property.staticMapBase64 && <Text style={styles.reportMapCaption}>Punto dorado: inmueble · círculo: radio de análisis de {data.geoSpatialContext.poiSearchRadiusUsed.toLocaleString("es-CO")} m · puntos azules: servicios más cercanos (OpenStreetMap). {property.mapAttribution || ""}</Text>}
       <Text style={styles.reportSectionTitle}>NORMA URBANA (POT) & PUNTOS DE INTERÉS</Text>
       <View style={styles.reportTable}>
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>DIMENSIÓN TERRITORIAL</Text><Text style={styles.reportCell}>INDICADOR / NORMA POT</Text><Text style={styles.reportCell}>DIAGNÓSTICO / COBERTURA</Text></View>
         <ReportTableRow label="Uso de suelo (POT)" value={data.geoSpatialContext.potNormative.landUse} detail="No reemplaza concepto de autoridad municipal"/>
         <ReportTableRow label="Altura / tratamiento" value={`${data.geoSpatialContext.potNormative.maxHeight} / ${data.geoSpatialContext.potNormative.treatment}`} detail="Sin dato si no hay consulta municipal verificable"/>
-        <ReportTableRow label="Servicios y POI (1.000 m)" value={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiCounts.commercial} puntos comerciales / ${data.geoSpatialContext.poiCounts.health} de salud` : "En validación territorial"} detail={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiSource} · movilidad ${data.geoSpatialContext.poiCounts.transport} · educación ${data.geoSpatialContext.poiCounts.education} · parques ${data.geoSpatialContext.poiCounts.parks}` : data.geoSpatialContext.poiStatus}/>
+        <ReportTableRow label="Servicios y POI (1.000 m)" value={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiCounts.commercial} puntos comerciales / ${data.geoSpatialContext.poiCounts.health} de salud` : data.geoSpatialContext.poiStatus} detail={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiSource} · movilidad ${data.geoSpatialContext.poiCounts.transport} · educación ${data.geoSpatialContext.poiCounts.education} · parques ${data.geoSpatialContext.poiCounts.parks}` : data.geoSpatialContext.poiStatus}/>
         <ReportTableRow label="Riesgos / amenazas" value={`${data.predictiveAnalysis.physicalRisks.landslide} · ${data.predictiveAnalysis.physicalRisks.flooding}`} detail="Remoción en masa / inundación"/>
       </View>
       <Text style={styles.reportSectionTitle}>04 · PERFIL MUNICIPAL DANE Y COBERTURA</Text>
       <View style={styles.reportTable}>
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>INDICADOR DANE</Text><Text style={styles.reportCell}>VALOR REGISTRADO</Text><Text style={styles.reportCell}>CAPA / COBERTURA</Text></View>
-        <ReportTableRow label="Población / hogares" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.population?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.households?.toLocaleString("es-CO") ?? "Sin dato en fuente"}` : "En validación territorial"} detail="Agregado municipal · DANE"/>
-        <ReportTableRow label="Viviendas / año censal" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.dwellings?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.censusYear ?? "Sin dato en fuente"}` : "En validación territorial"} detail="DANE"/>
-        <ReportTableRow label="IPM municipal" value={!data.geoSpatialContext.dane.ipmAvailable ? "En validación territorial" : data.geoSpatialContext.dane.ipm === null ? "Sin dato en fuente" : `${data.geoSpatialContext.dane.ipm.toLocaleString("es-CO")}%`} detail="No corresponde a una medición individual del inmueble"/>
+        <ReportTableRow label="Población / hogares" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.population?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.households?.toLocaleString("es-CO") ?? "Sin dato en fuente"}` : "Sin dato municipal"} detail="Agregado municipal · DANE"/>
+        <ReportTableRow label="Viviendas / año censal" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.dwellings?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.censusYear ?? "Sin dato en fuente"}` : "Sin dato municipal"} detail="DANE"/>
+        <ReportTableRow label="IPM municipal" value={!data.geoSpatialContext.dane.ipmAvailable ? "Sin dato municipal" : data.geoSpatialContext.dane.ipm === null ? "Sin dato en fuente" : `${data.geoSpatialContext.dane.ipm.toLocaleString("es-CO")}%`} detail="No corresponde a una medición individual del inmueble"/>
         <ReportTableRow label="Catalizadores de valorización" value={data.predictiveAnalysis.capitalGainCatalysts.length ? `${data.predictiveAnalysis.capitalGainCatalysts.length} identificados` : "Sin proyectos verificables"} detail="Fuentes disponibles al generar"/>
       </View>
-      <Text style={styles.sourceNote}>Trazabilidad: catastro consultado mediante {data.officialData.servedFrom || data.officialData.lookupMethod};{data.officialData.checkedAt ? ` fecha ${dateLabel(data.officialData.checkedAt)};` : " sin fecha confirmada por la fuente;"} estadísticas DANE{data.geoSpatialContext.dane.asOf ? ` con corte ${dateLabel(data.geoSpatialContext.dane.asOf)}` : " sin fecha de corte disponible"}. Precio mostrado: valor de oferta registrado en la plataforma, no avalúo comercial.</Text>
-      {data.warnings.length > 0 && <View style={[styles.callout, { marginTop: 6, marginBottom: 6 }]}><Text style={styles.calloutText}>VALIDACIONES Y FUENTES PENDIENTES: {data.warnings.slice(0, 3).join(" ")}</Text></View>}
-      <View style={styles.callout}><Text style={styles.calloutText}>Alcance: informe técnico-comercial automático basado en la ficha del inmueble y fuentes públicas disponibles. No sustituye visita pericial, certificado de tradición, avalúo comercial ni concepto de norma urbana oficial. La geometría y los datos territoriales son referenciales; pueden variar según cobertura y fecha de consulta.</Text></View>
-      <View style={styles.reportContact}><Text style={styles.reportContactTitle}>DAVID BASTO · ING. CIVIL · ASESOR INMOBILIARIO</Text><Text style={styles.reportContactText}>Atención personalizada · WhatsApp +57 312 537 2457 · Propiedades con propósito</Text></View>
+      <Text style={styles.sourceNote}>Trazabilidad: catastro IGAC vía Croma ({data.officialData.lookupMethod === "cadastral_id" ? "por número predial" : data.officialData.lookupMethod === "coordinates" ? "por coordenadas" : "sin consulta de predio"});{data.officialData.checkedAt ? ` fecha ${dateLabel(data.officialData.checkedAt)};` : " sin fecha confirmada por la fuente;"} estadísticas DANE{data.geoSpatialContext.dane.asOf ? ` con corte ${dateLabel(data.geoSpatialContext.dane.asOf)}` : " sin fecha de corte disponible"}. Precio mostrado: valor de oferta registrado en la plataforma, no avalúo comercial.</Text>
+      {data.warnings.length > 0 && <View style={[styles.callout, { marginTop: 6, marginBottom: 6 }]} wrap={false}><Text style={styles.calloutText}>VALIDACIONES Y FUENTES PENDIENTES: {data.warnings.slice(0, 4).join(" ")}</Text></View>}
+      <Text style={styles.sourceNote}>Alcance: informe técnico-comercial automático basado en la ficha del inmueble y fuentes públicas disponibles. No sustituye visita pericial, certificado de tradición, avalúo comercial ni concepto de norma urbana oficial. La geometría y los datos territoriales son referenciales; pueden variar según cobertura y fecha de consulta.</Text>
+      <View style={styles.reportContact} wrap={false}><Text style={styles.reportContactTitle}>DAVID BASTO · ING. CIVIL · ASESOR INMOBILIARIO</Text><Text style={styles.reportContactText}>Atención personalizada · WhatsApp +57 312 537 2457 · Propiedades con propósito</Text></View>
       <Footer data={data}/>
     </Page>
   </Document>;

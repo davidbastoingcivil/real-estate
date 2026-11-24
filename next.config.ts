@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   turbopack: { root: process.cwd() },
-  serverExternalPackages: ["@react-pdf/renderer", "pdfkit"],
+  serverExternalPackages: ["@react-pdf/renderer", "pdfkit", "sharp"],
   outputFileTracingIncludes: {
     "/api/avm/pdf": [
       "./node_modules/pdfkit/js/standard-fonts/**/*",

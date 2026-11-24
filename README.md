@@ -56,6 +56,19 @@ Para activar el webhook, guarda la URL de producción de n8n en **Supabase Vault
 
 La calculadora ofrece una estimación de cuota con conversión de tasa efectiva anual a mes vencido y una aproximación de rentabilidad bruta y flujo mensual. No incluye costos de cierre, seguros, impuestos, administración, vacancia ni variaciones de tasa.
 
+## Datos oficiales y mapa del informe (sincronización automática)
+
+Al crear o editar un inmueble en `/admin`, la app consulta en segundo plano (`after()` en `src/app/admin/(dashboard)/actions.ts`):
+
+- **Croma (IGAC + DANE)** mediante `CROMA_API_KEY`: resuelve el código DIVIPOLA a partir del municipio si falta, trae indicadores DANE (censo, IPM), estadísticas catastrales y el gestor catastral, y busca el predio por Número Predial Nacional o por coordenadas. El resultado queda en `public.property_official_data`.
+- **OpenStreetMap (Overpass)**: puntos de interés en 1 km, guardados en `public.property_geo_analytics`. Usa `OVERPASS_API_URL` si existe y luego varios servidores espejo.
+
+El panel muestra el estado de cada ficha y un botón **Sincronizar** para repetir la consulta. Un trigger marca los datos como pendientes cuando cambian coordenadas, municipio o identificadores catastrales. El informe PDF lee primero esa caché y solo consulta en vivo si aún no existe.
+
+El IGAC solo publica predios de municipios cuyo catastro administra (por ejemplo Carmen de Apicalá). Bogotá (UAECD), Tunja y otros gestores propios aparecen como “gestor no IGAC”: registra avalúo, áreas y número predial desde el certificado catastral.
+
+El mapa del informe usa, en orden: Mapbox satelital si existe `MAPBOX_ACCESS_TOKEN`, Esri World Imagery y OpenStreetMap, ambos sin clave. Las teselas se componen en el servidor con `sharp`.
+
 ## Contacto
 
 El número y la identidad comercial se editan en `/admin`, en la sección “Diseño del sitio”.
