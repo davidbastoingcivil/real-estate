@@ -34,6 +34,32 @@ Códigos DIVIPOLA a cargar: Bogotá D.C. **11001**, Tunja **15001**, Carmen de A
 
 ---
 
+### Verificación real de Croma (24-nov-2026)
+
+`CROMA_API_KEY` quedó configurada en Vercel (Production + Preview) y se redesplegó producción. Pruebas directas con la clave:
+
+| Consulta | Resultado |
+|---|---|
+| Predio por punto — Penthouse Tunja (5.538, -73.355) | `found:false`. Tunja tiene **gestor catastral propio** (Municipio de Tunja, desde 2024): sus predios no están en la base IGAC |
+| Predio por punto — Toberín, Bogotá | `found:false`. Bogotá la gestiona **Catastro Distrital (UAECD)**, no el IGAC |
+| Predio por punto — ficha 1 "Carmen de Apicalá" (4.2045, -74.7297) | `found:true`, pero devuelve una finca de **232 ha en Melgar (73449)**: las coordenadas no caen sobre el condominio |
+| Predio por NPN de la ficha 1 (`25175…`) | `found:false`: el número no existe |
+| DANE censo Tunja (15001) | OK: población 167.991, hogares 55.679, viviendas 64.550, distribución por estrato |
+| DANE IPM Tunja | OK: 11,4 % (urbano 10,2 %) |
+| IGAC estadísticas municipales Tunja | OK: 18 filas (rural/urbano × años 2017–2025) |
+
+Conclusiones:
+
+- La clave funciona. Los datos municipales (DANE, IGAC) **sí** se pueden llenar ya, en cuanto la ficha tenga su DIVIPOLA.
+- El dato **predial** de Croma/IGAC solo sirve en municipios con catastro IGAC. Tunja, Bogotá y otros gestores (Medellín, Cali, AMCO, etc.) necesitan su propia fuente o carga manual desde el certificado catastral.
+- Croma devuelve más de lo que el informe usa: `address`, `previous_cadastral_number`, `buildings` (área, uso, pisos, baños por construcción), `vigencia` (año de actualización catastral), `geometry` (polígono del predio). Deben aprovecharse.
+
+Errores de lectura de la respuesta en `governmentData.ts`:
+
+1. `households` llega como número (`55679`), pero el código lee `households.total` → siempre queda vacío.
+2. `municipal-statistics` devuelve varias filas; el código toma la primera (rural 2025) en lugar de la urbana del último año o la suma urbana + rural.
+3. No se usan `vigencia.status` / `years_since_update`. Son importantes porque el avalúo catastral de Tunja está "Desactualizado" desde 2017.
+
 ## 2. Fase 0 — Configuración (inmediato, sin código)
 
 1. **Vercel → Settings → Environment Variables** (Production, Preview, Development), tipo *Sensitive*:
@@ -63,8 +89,10 @@ Objetivo: que cada ficha tenga datos oficiales **guardados**, no consultados en 
    - Rellena NPN, DIVIPOLA, áreas oficiales y avalúo catastral.
 3. **Sincronización DANE/IGAC municipal** una vez por municipio (tabla `municipal_indicators`), no por informe.
 4. El PDF lee solo de Supabase → informe en < 3 s, sin timeouts, y con fecha de corte de la fuente.
-5. Conversión de número predial antiguo (20 dígitos) a NPN de 30 si Croma lo expone; si no, aviso en el admin.
-6. Manejo de errores visible: estado por ficha (`verificado`, `pendiente`, `no encontrado`, `conflicto`) en la tabla del admin.
+5. Detectar el gestor catastral del municipio (`cadastral_manager` de las estadísticas IGAC). Si no es IGAC, no consultar por punto: marcar la ficha como "requiere certificado del gestor" y permitir la carga manual de avalúo, áreas y NPN.
+6. Mostrar en el admin el polígono (`geometry`) devuelto sobre el mapa, para confirmar visualmente que es el predio correcto.
+7. Conversión de número predial antiguo (20 dígitos) a NPN de 30 si Croma lo expone; si no, aviso en el admin.
+8. Manejo de errores visible: estado por ficha (`verificado`, `pendiente`, `no encontrado`, `conflicto`) en la tabla del admin.
 
 ## 5. Fase 3 — Corrección del PDF (1–2 días)
 
