@@ -32,12 +32,14 @@ function territorialJson(data: TerritorialData | null) {
 /**
  * Pull official data (Croma: IGAC + DANE) and OpenStreetMap context for one property
  * and store it in Supabase. Requires an admin session (RLS). Safe to run in `after()`.
- * Without `force`, sources are only queried when the cached data is pending.
+ * Croma is only queried when `includeOfficial` is true: on property creation or an explicit
+ * "Sincronizar" from the admin panel. Without `force`, sources are only queried when
+ * the cached data is pending.
  */
 export async function syncPropertyIntegrations(
   supabase: SupabaseClient,
   propertyId: number,
-  { force = false }: { force?: boolean } = {},
+  { force = false, includeOfficial = true }: { force?: boolean; includeOfficial?: boolean } = {},
 ): Promise<PropertySyncSummary> {
   const { data: row, error } = await supabase.from("properties")
     .select("id,lat,lng,municipality,municipality_code,ubicación,cadastral_id,national_cadastral_number,chip")
@@ -52,7 +54,7 @@ export async function syncPropertyIntegrations(
     supabase.from("property_official_data").select("status,source,details,cadastral_number").eq("property_id", propertyId).maybeSingle(),
     supabase.from("property_geo_analytics").select("status").eq("property_id", propertyId).maybeSingle(),
   ]);
-  const officialNeeded = force || !officialCache || officialCache.status === "pending" || officialCache.status === "error";
+  const officialNeeded = includeOfficial && (force || !officialCache || officialCache.status === "pending" || officialCache.status === "error");
   const osmNeeded = hasPoint && (force || !geoCache || geoCache.status !== "ready");
 
   const osmPromise = osmNeeded

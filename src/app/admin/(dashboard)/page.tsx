@@ -27,7 +27,7 @@ type OfficialSync = { status: string; message: string | null; cadastral_manager:
 const single = <T,>(value: T | T[] | null | undefined): T | null => Array.isArray(value) ? value[0] ?? null : value ?? null;
 
 const officialLabels: Record<string, string> = {
-  pending: "Datos oficiales: sincronizando",
+  pending: "Datos oficiales: pendientes (usa Sincronizar)",
   verified: "Catastro IGAC verificado",
   not_found: "Catastro: predio no encontrado",
   manager_not_igac: "Catastro: gestor no IGAC (carga manual)",

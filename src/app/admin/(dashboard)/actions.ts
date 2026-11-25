@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { syncPropertyIntegrations, type PropertySyncSummary } from "@/lib/integrations/propertySync";
 import { isBogotaChip, parseBogotaCadastralCsv, type BogotaParcel } from "@/lib/integrations/bogotaCadastre";
-import { cromaConfigured, fetchTerritorialData } from "@/lib/integrations/croma";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AudioTour, ProjectDossier, VideoPresentation } from "@/data/properties";
 
@@ -186,11 +185,15 @@ function slugify(value: string) {
     .replace(/^-|-$/g, "") || `inmueble-${Date.now()}`;
 }
 
-/** Pull official (Croma) and OSM data after the response is sent, so saving stays fast. */
-function scheduleIntegrationSync(supabase: Awaited<ReturnType<typeof authorizedClient>>, propertyId: number) {
+/**
+ * Pull data after the response is sent, so saving stays fast. Croma (IGAC/DANE) is
+ * only consulted for a newly registered property (`includeOfficial: true`); edits and
+ * imports refresh OpenStreetMap only.
+ */
+function scheduleIntegrationSync(supabase: Awaited<ReturnType<typeof authorizedClient>>, propertyId: number, { includeOfficial }: { includeOfficial: boolean }) {
   after(async () => {
     try {
-      const summary = await syncPropertyIntegrations(supabase, propertyId);
+      const summary = await syncPropertyIntegrations(supabase, propertyId, { includeOfficial });
       console.info("[property-sync]", JSON.stringify(summary));
       revalidatePath("/admin");
     } catch (error) {
@@ -233,7 +236,7 @@ export async function createProperty(data: PropertyInput): Promise<ActionResult>
       const { error: featuredError } = await supabase.rpc("set_featured_property", { target_id: created.id });
       if (featuredError) throw featuredError;
     }
-    scheduleIntegrationSync(supabase, Number(created.id));
+    scheduleIntegrationSync(supabase, Number(created.id), { includeOfficial: true });
     refreshCatalog();
     return migrationPending ? { success: true, warning: migrationWarning, propertyId: Number(created.id) } : { success: true, propertyId: Number(created.id) };
   } catch (error) {
@@ -264,7 +267,7 @@ export async function updateProperty(id: number, data: PropertyInput): Promise<A
     const previousFiles = migrationPending ? (existing.images || []) : [...(existing.images || []), ...mediaUrls(existing.audio_tours), ...mediaUrls(existing.video_presentations)];
     const retainedFiles = migrationPending ? data.images : [...data.images, ...mediaUrls(data.audio_tours), ...mediaUrls(data.video_presentations)];
     await removeUnreferencedStorageFiles(supabase, previousFiles, retainedFiles);
-    scheduleIntegrationSync(supabase, id);
+    scheduleIntegrationSync(supabase, id, { includeOfficial: false });
     refreshCatalog();
     return migrationPending ? { success: true, warning: migrationWarning, propertyId: id } : { success: true, propertyId: id };
   } catch (error) {
@@ -272,7 +275,7 @@ export async function updateProperty(id: number, data: PropertyInput): Promise<A
   }
 }
 
-/** Manual re-sync from the admin panel: queries Croma and OpenStreetMap again. */
+/** Explicit re-sync from the admin panel: the only path besides creation that queries Croma (IGAC/DANE). */
 export async function resyncPropertyIntegrations(id: number): Promise<{ success: true; summary: PropertySyncSummary } | { success: false; error: string }> {
   try {
     if (!Number.isSafeInteger(id) || id < 1) throw new Error("El identificador del inmueble no es válido.");
@@ -335,8 +338,8 @@ export async function importBogotaCadastralCsv(id: number, csvText: string): Pro
     }).eq("id", id);
     if (updateError) throw updateError;
 
-    // 2. Official parcel data, then municipal indicators (best effort).
-    const territorial = cromaConfigured() ? await fetchTerritorialData("11001").catch(() => null) : null;
+    // 2. Official parcel data. Municipal indicators already stored for the
+    //    property are kept; Croma is not queried here.
     const now = new Date().toISOString();
     const { error: cacheError } = await supabase.from("property_official_data").upsert({
       property_id: id,
@@ -357,7 +360,6 @@ export async function importBogotaCadastralCsv(id: number, csvText: string): Pro
       vigencia: { status: match.updateYear ? "Actualizado" : null, update_year: match.updateYear, formation_year: match.formationYear, zone: "urban" },
       buildings: match.uses.map(use => ({ use: use.use, area_m2: use.areaM2, floors: null, bathrooms: null })),
       geometry: null,
-      ...(territorial ? { territorial: { as_of: territorial.asOf, census: territorial.census, ipm: territorial.ipm, cadastral_stats: territorial.cadastralStats, errors: territorial.errors } } : {}),
       details: match,
       source_checked_at: now,
       message: "Datos importados desde el archivo de Catastro Bogotá (UAECD / IDECA).",
@@ -366,7 +368,7 @@ export async function importBogotaCadastralCsv(id: number, csvText: string): Pro
     }, { onConflict: "property_id" });
     if (cacheError) throw cacheError;
 
-    scheduleIntegrationSync(supabase, id);
+    scheduleIntegrationSync(supabase, id, { includeOfficial: false });
     revalidatePath("/admin");
     revalidatePath(`/admin/properties/${id}`);
     return { success: true, parcel: match };

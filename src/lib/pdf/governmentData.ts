@@ -3,10 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { analyticsPoiCounts, analyticsPoiPoints } from "@/lib/geo/propertyAnalytics";
 import { makePoiHeatmap, type LivePoiResult } from "@/lib/geo/overpassClient";
 import { buildStaticMap } from "@/lib/pdf/staticMap";
-import {
-  asObject, cromaConfigured, fetchTerritorialData, lookupCadastralByNumber, lookupCadastralByPoint,
-  managerIsIgac, numberOrNull, type CadastralLookup, type JsonRecord, type TerritorialData,
-} from "@/lib/integrations/croma";
+// Only types and pure helpers: this module never calls the Croma API.
+import { asObject, managerIsIgac, numberOrNull, type CadastralLookup, type JsonRecord, type TerritorialData } from "@/lib/integrations/croma";
 
 type PoiCell = CadastralReportData["geoSpatialContext"]["poiCells"][number];
 
@@ -42,57 +40,44 @@ function territorialFromCache(value: unknown): TerritorialData | null {
   };
 }
 
-/** Prefer the data the admin sync stored; fall back to live Croma queries. */
-async function officialSnapshot(property: CadastralProperty, supabase: SupabaseClient, municipalityCode: string | null, validPoint: boolean): Promise<OfficialSnapshot> {
+/**
+ * Official data comes only from Supabase: Croma (IGAC/DANE) is queried when the
+ * administrator registers a property, never while a report is generated.
+ */
+async function officialSnapshot(property: CadastralProperty, supabase: SupabaseClient, municipalityCode: string | null): Promise<OfficialSnapshot> {
+  const empty: OfficialSnapshot = {
+    source: "cache", origin: null, details: null, status: null,
+    message: "Los datos oficiales (IGAC/DANE) de este inmueble aún no están sincronizados: se consultan al registrar el inmueble o con “Sincronizar” en el panel.",
+    method: "none", found: null, parcel: null, checkedAt: null, servedFrom: null, manager: null, territorial: null,
+  };
   const { data: cache } = await supabase.from("property_official_data").select("*").eq("property_id", property.id).maybeSingle();
   // Ignore a cache written for another municipality (e.g. the listing moved).
   const cacheMatches = cache && (!municipalityCode || !cache.municipality_code || cache.municipality_code === municipalityCode);
-  if (cache && cacheMatches && CACHE_STATUSES.has(String(cache.status))) {
-    const verified = cache.status === "verified";
-    const origin = cache.source === "catastro_bogota" ? "catastro_bogota" as const : "croma" as const;
-    const cachedTerritorial = territorialFromCache(cache.territorial);
-    return {
-      source: "cache",
-      origin,
-      details: origin === "catastro_bogota" ? asObject(cache.details) : null,
-      status: String(cache.status),
-      message: text(cache.message),
-      method: (cache.lookup_method as CadastralLookup["method"]) || "none",
-      found: verified ? true : cache.status === "not_found" ? false : null,
-      parcel: verified ? {
-        cadastral_number: cache.cadastral_number, previous_cadastral_number: cache.previous_cadastral_number,
-        municipality_code: cache.municipality_code, municipality: cache.municipality, address: cache.address,
-        appraisal: cache.appraisal, built_area_m2: cache.built_area_m2, land_area_m2: cache.land_area_m2,
-        economic_destination: cache.economic_destination, vigencia: cache.vigencia, buildings: cache.buildings,
-      } : null,
-      checkedAt: text(cache.source_checked_at) || text(cache.synced_at),
-      servedFrom: origin === "catastro_bogota" ? "archivo de Catastro Bogotá (UAECD)" : "caché sincronizada desde Croma (IGAC/DANE)",
-      manager: text(cache.cadastral_manager),
-      territorial: cachedTerritorial ?? (municipalityCode && cromaConfigured() ? await fetchTerritorialData(municipalityCode).catch(() => null) : null),
-    };
-  }
+  if (!cache || !cacheMatches) return empty;
+  const territorial = territorialFromCache(cache.territorial);
+  const manager = text(cache.cadastral_manager);
+  // Municipal indicators stay valid while the municipality is the same, even if
+  // the parcel data is pending after a location or identifier change.
+  if (!CACHE_STATUSES.has(String(cache.status))) return { ...empty, territorial, manager };
 
-  const empty: OfficialSnapshot = { source: "live", origin: null, details: null, status: null, message: null, method: "none", found: null, parcel: null, checkedAt: null, servedFrom: null, manager: null, territorial: null };
-  if (!cromaConfigured()) return { ...empty, message: "CROMA_API_KEY no está configurada en el servidor." };
-
-  const territorial = municipalityCode ? await fetchTerritorialData(municipalityCode).catch(() => null) : null;
-  const manager = territorial?.cadastralStats?.manager ?? null;
-  const npn = [property.national_cadastral_number, property.cadastral_id]
-    .map(value => (value || "").replace(/\D/g, "")).find(value => /^\d{30}$/.test(value)) || null;
-  let lookup: CadastralLookup | null = null;
-  try {
-    if (npn) lookup = await lookupCadastralByNumber(npn);
-    if ((!lookup || lookup.found !== true) && validPoint && managerIsIgac(manager)) lookup = await lookupCadastralByPoint(property.lat, property.lng);
-  } catch { /* reported below as a warning */ }
+  const verified = cache.status === "verified";
+  const origin = cache.source === "catastro_bogota" ? "catastro_bogota" as const : "croma" as const;
   return {
-    ...empty,
-    origin: "croma",
-    status: lookup ? (lookup.found ? "verified" : "not_found") : !managerIsIgac(manager) ? "manager_not_igac" : null,
-    method: lookup?.method ?? "none",
-    found: lookup?.found ?? null,
-    parcel: lookup?.found ? lookup.property : null,
-    checkedAt: lookup?.checkedAt ?? null,
-    servedFrom: lookup?.servedFrom ?? null,
+    source: "cache",
+    origin,
+    details: origin === "catastro_bogota" ? asObject(cache.details) : null,
+    status: String(cache.status),
+    message: text(cache.message),
+    method: (cache.lookup_method as CadastralLookup["method"]) || "none",
+    found: verified ? true : cache.status === "not_found" ? false : null,
+    parcel: verified ? {
+      cadastral_number: cache.cadastral_number, previous_cadastral_number: cache.previous_cadastral_number,
+      municipality_code: cache.municipality_code, municipality: cache.municipality, address: cache.address,
+      appraisal: cache.appraisal, built_area_m2: cache.built_area_m2, land_area_m2: cache.land_area_m2,
+      economic_destination: cache.economic_destination, vigencia: cache.vigencia, buildings: cache.buildings,
+    } : null,
+    checkedAt: text(cache.source_checked_at) || text(cache.synced_at),
+    servedFrom: origin === "catastro_bogota" ? "archivo de Catastro Bogotá (UAECD)" : "datos guardados al registrar el inmueble (Croma · IGAC/DANE)",
     manager,
     territorial,
   };
@@ -141,7 +126,7 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   }
 
   const [snapshot, analyticsResult] = await Promise.all([
-    officialSnapshot(property, supabase, declaredMunicipalityCode, coordinatesValid),
+    officialSnapshot(property, supabase, declaredMunicipalityCode),
     supabase.from("property_geo_analytics")
       .select("accessibility,pois,urban_norm,search_radius_m,source_name,source_updated_at,status,updated_at")
       .eq("property_id", property.id)

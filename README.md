@@ -58,18 +58,18 @@ La calculadora ofrece una estimación de cuota con conversión de tasa efectiva 
 
 ## Datos oficiales y mapa del informe (sincronización automática)
 
-Al crear o editar un inmueble en `/admin`, la app consulta en segundo plano (`after()` en `src/app/admin/(dashboard)/actions.ts`):
+**Croma (`CROMA_API_KEY`) solo se usa al registrar un inmueble nuevo** o cuando el administrador pulsa **Sincronizar**. El informe PDF y las páginas públicas nunca la consultan: leen lo guardado en Supabase. Al **crear** un inmueble en `/admin`, la app consulta en segundo plano (`after()` en `src/app/admin/(dashboard)/actions.ts`):
 
 - **Croma (IGAC + DANE)** mediante `CROMA_API_KEY`: resuelve el código DIVIPOLA a partir del municipio si falta, trae indicadores DANE (censo, IPM), estadísticas catastrales y el gestor catastral, y busca el predio por Número Predial Nacional o por coordenadas. El resultado queda en `public.property_official_data`.
 - **OpenStreetMap (Overpass)**: puntos de interés en 1 km, guardados en `public.property_geo_analytics`. Usa `OVERPASS_API_URL` si existe y luego varios servidores espejo.
 
-El panel muestra el estado de cada ficha y un botón **Sincronizar** para repetir la consulta. Un trigger marca los datos como pendientes cuando cambian coordenadas, municipio o identificadores catastrales. El informe PDF lee primero esa caché y solo consulta en vivo si aún no existe.
+Al **editar** un inmueble solo se actualiza OpenStreetMap. Si cambian coordenadas, municipio o identificadores catastrales, un trigger marca los datos oficiales como pendientes: el panel lo indica y el administrador decide cuándo pulsar **Sincronizar**. Mientras tanto, el PDF muestra los indicadores municipales ya guardados y avisa que el predio está pendiente.
 
 El IGAC solo publica predios de municipios cuyo catastro administra (por ejemplo Carmen de Apicalá). Bogotá (UAECD), Tunja y otros gestores propios aparecen como “gestor no IGAC”: registra avalúo, áreas y número predial desde el certificado catastral.
 
 ### Catastro Bogotá (UAECD)
 
-En la edición de un inmueble de Bogotá aparece **Importar CSV de Catastro Bogotá**. Acepta la descarga de lote o predio de [IDECA](https://ideca.gov.co/recursos/los-mas-consultados/lote), que viene separada por punto y coma con una fila por uso, y el `Predio.csv` de datos abiertos (PRECHIP, PRECLASE, PREATERRE…). El archivo se cruza con la ficha por CHIP, número predial o cédula catastral y completa esos campos y las áreas oficiales. Guarda además barrio, dirección oficial, destino, usos con su área, vetustez, vigencias, zona homogénea física, puntaje y códigos de calificación. El PDF agrega una página “Ficha predial Catastro Bogotá” con los campos clave, y la sincronización con Croma no sobrescribe un predio importado.
+En la edición de un inmueble de Bogotá aparece **Importar CSV de Catastro Bogotá**. Acepta la descarga de lote o predio de [IDECA](https://ideca.gov.co/recursos/los-mas-consultados/lote), que viene separada por punto y coma con una fila por uso, y el `Predio.csv` de datos abiertos (PRECHIP, PRECLASE, PREATERRE…). El archivo se cruza con la ficha por CHIP, número predial o cédula catastral y completa esos campos y las áreas oficiales. Guarda además barrio, dirección oficial, destino, usos con su área, vetustez, vigencias, zona homogénea física, puntaje y códigos de calificación. El PDF agrega una página “Ficha predial Catastro Bogotá” con los campos clave, y la sincronización con Croma no sobrescribe un predio importado. La importación no consulta Croma.
 
 El informe solo incluye fotos propias del inmueble: descarta videos y cualquier imagen que también use otra ficha. Si no queda ninguna, muestra “Sin fotografía registrada del inmueble”.
 
