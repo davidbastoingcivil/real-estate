@@ -1,0 +1,85 @@
+/*
+ * Movimiento e interacción tipo app (Flutter / Material): ondas al tocar, entradas
+ * escalonadas, rebote al presionar y transición de página. Se desactiva con
+ * prefers-reduced-motion.
+ */
+
+/* Transición de entrada en cada navegación (src/app/template.tsx). */
+.page-transition { animation: page-in .55s cubic-bezier(.2, .8, .2, 1) backwards; }
+@keyframes page-in { from { opacity: 0; transform: translateY(18px); } }
+
+/* Onda de tinta. */
+.ink-host { position: relative; }
+.ink-ripple {
+  position: absolute; border-radius: 50%; pointer-events: none; z-index: 0;
+  background: currentColor; opacity: .22; transform: scale(0);
+  animation: ink .6s cubic-bezier(.2, .8, .2, 1) forwards;
+}
+@keyframes ink { to { transform: scale(1); opacity: 0; } }
+.button, .nav-cta, .mobile-cta, .home-search-submit, .category-tile, .quick-filters button, .favorite-button,
+.results-view-switch button, .category-pills button, .contact-button, .financial-dossier-button, .whatsapp,
+.theme-toggle, .hero-text-link, .admin-cms-nav, .admin-cms-signout, .mobile-bottom-nav a { overflow: hidden; }
+
+/* Rebote al presionar y elevación al pasar. */
+.button, .nav-cta, .home-search-submit, .contact-button, .financial-dossier-button, .whatsapp, .category-pills button,
+.results-view-switch button, .favorite-button, .card-arrow, .hero-text-link, .theme-toggle, .admin-cms-nav {
+  transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), background-color .25s, color .25s, border-color .25s, box-shadow .25s;
+}
+.button:hover, .nav-cta:hover, .contact-button:hover, .financial-dossier-button:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18) !important; }
+.button:active, .nav-cta:active, .home-search-submit:active, .contact-button:active, .financial-dossier-button:active,
+.category-pills button:active, .results-view-switch button:active, .favorite-button:active, .whatsapp:active,
+.hero-text-link:active, .theme-toggle:active, .category-tile:active, .card-link:active .property-card { transform: scale(.96); }
+.favorite-button:hover { transform: scale(1.1); }
+.favorite-button.saved svg { animation: heart-pop .45s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes heart-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
+.card-link:hover .card-arrow { transform: rotate(45deg) scale(1.08); }
+
+/* Navegación: subrayado animado y botón de WhatsApp que "respira". */
+.nav nav a { position: relative; }
+.nav nav a::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 2px; border-radius: 2px;
+  background: var(--t-green); transform: scaleX(0); transform-origin: left; transition: transform .3s cubic-bezier(.2, .8, .2, 1);
+}
+.nav nav a:hover::after { transform: scaleX(1); }
+.whatsapp { animation: wa-pulse 2.8s ease-in-out infinite; }
+@keyframes wa-pulse { 0%, 100% { box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25), 0 0 0 0 var(--t-green-tint); } 50% { box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25), 0 0 0 10px rgba(0, 0, 0, 0); } }
+
+/* Barra inferior móvil: indicador tipo pastilla en el activo. */
+.mobile-bottom-nav a { position: relative; transition: color .25s, transform .25s; }
+.mobile-bottom-nav a.active::before {
+  content: ""; position: absolute; top: 4px; left: 50%; width: 46px; height: 28px; border-radius: 999px;
+  background: var(--t-green-tint); transform: translateX(-50%); z-index: -1; animation: pill-in .35s cubic-bezier(.34, 1.56, .64, 1);
+}
+@keyframes pill-in { from { transform: translateX(-50%) scaleX(.3); opacity: 0; } }
+
+/* Entradas escalonadas al hacer scroll (MotionEffects añade .reveal / .is-revealed). */
+.motion-ready .reveal { opacity: 0; transform: translateY(26px) scale(.985); }
+.motion-ready .reveal.is-revealed {
+  opacity: 1; transform: none;
+  transition: opacity .7s cubic-bezier(.2, .8, .2, 1) var(--reveal-delay, 0ms), transform .7s cubic-bezier(.2, .8, .2, 1) var(--reveal-delay, 0ms);
+}
+.motion-ready .property-card.reveal.is-revealed { transition: opacity .7s cubic-bezier(.2, .8, .2, 1) var(--reveal-delay, 0ms), transform .7s cubic-bezier(.2, .8, .2, 1) var(--reveal-delay, 0ms), box-shadow .25s; }
+
+/* Hero: texto que entra en cascada y foto con zoom lento. */
+.home-modern .hero-image { animation: hero-zoom 18s ease-out both; }
+@keyframes hero-zoom { from { transform: scale(1.12); } to { transform: scale(1); } }
+.home-modern .hero-kicker, .home-modern .hero h1, .home-modern .hero-description, .home-modern .hero-actions, .home-modern .hero-feature {
+  animation: rise-in .9s cubic-bezier(.2, .8, .2, 1) both;
+}
+.home-modern .hero h1 { animation-delay: .12s; }
+.home-modern .hero-description { animation-delay: .24s; }
+.home-modern .hero-actions { animation-delay: .36s; }
+.home-modern .hero-feature { animation-delay: .5s; }
+.home-search-wrap { animation: rise-in .9s cubic-bezier(.2, .8, .2, 1) .45s both; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(28px); } }
+
+/* Galería y modales. */
+.property-gallery-media img, .property-gallery-media video { animation: fade-swap .5s ease both; }
+@keyframes fade-swap { from { opacity: .2; transform: scale(1.02); } }
+.dossier-modal { animation: sheet-up .45s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes sheet-up { from { opacity: 0; transform: translateY(40px) scale(.97); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .motion-ready .reveal { opacity: 1; transform: none; }
+}

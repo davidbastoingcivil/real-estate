@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Home, LayoutDashboard, Plus } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import AdminSignOut from "@/components/admin/AdminSignOut";
+import ThemeToggle from "@/components/ThemeToggle";
 
 // Server actions here also run the OSM sync and, for new properties or an explicit
 // "Sincronizar", the Croma (IGAC/DANE) lookup (in `after`), which can take ~30 s.
@@ -25,7 +26,7 @@ export default async function AdminDashboardLayout({ children }: Readonly<{ chil
       <AdminSignOut />
     </aside>
     <div className="admin-cms-main">
-      <header className="admin-topbar admin-cms-topbar"><div><span>Modo administrador</span><small>Los cambios se guardan en Supabase</small></div><AdminSignOut compact /></header>
+      <header className="admin-topbar admin-cms-topbar"><div><span>Modo administrador</span><small>Los cambios se guardan en Supabase</small></div><div className="admin-topbar-actions"><ThemeToggle/><AdminSignOut compact /></div></header>
       <main className="admin-cms-content">{children}</main>
       <nav className="admin-cms-mobile-nav" aria-label="Administración">
         <Link href="/admin"><LayoutDashboard size={18}/><span>Panel</span></Link>

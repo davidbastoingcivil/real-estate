@@ -1,0 +1,170 @@
+/*
+ * Maquetación (nov. 2026): composición inspirada en portales de lujo, válida para
+ * los modos oscuro y claro (los colores vienen de los tokens --t-* de theme-app.css).
+ * Solo presentación: estructura de datos, rutas y componentes no dependen de este archivo.
+ */
+
+/* ---------- Botón de tema y transición circular ---------- */
+.theme-toggle {
+  position: relative; flex: none; width: 58px; height: 32px; padding: 0; border: 1px solid var(--t-line);
+  border-radius: 999px; background: var(--t-soft); cursor: pointer; overflow: hidden;
+  transition: background-color .35s ease, border-color .35s ease;
+}
+.theme-toggle-track { position: absolute; inset: 0; }
+.theme-toggle-thumb {
+  position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--t-green); color: var(--t-on-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); transition: transform .45s cubic-bezier(.34, 1.56, .64, 1);
+}
+.theme-toggle[data-theme-state="light"] .theme-toggle-thumb { transform: translateX(26px) rotate(180deg); }
+.theme-toggle:hover { border-color: var(--t-green); }
+.nav .theme-toggle { margin-left: auto; margin-right: 14px; }
+@media (max-width: 650px) { .nav .theme-toggle { display: block !important; margin-right: 10px; } }
+
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: theme-reveal .7s cubic-bezier(.65, 0, .35, 1) both; }
+@keyframes theme-reveal {
+  from { clip-path: circle(0 at var(--vt-x, 90%) var(--vt-y, 40px)); }
+  to { clip-path: circle(150vmax at var(--vt-x, 90%) var(--vt-y, 40px)); }
+}
+
+/* Transición suave de colores al cambiar de tema (para navegadores sin View Transitions). */
+body, .nav, .footer, .property-card, .search-panel, .contact-card, .home-search, .financial-calculator, .mobile-bottom-nav {
+  transition: background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease;
+}
+
+/* ---------- Hero ---------- */
+.home-modern .hero { height: min(760px, 92vh) !important; min-height: 600px !important; }
+.home-modern .hero-shade {
+  background:
+    linear-gradient(90deg, rgba(6, 11, 18, 0.88) 0%, rgba(6, 11, 18, 0.55) 45%, rgba(6, 11, 18, 0.1) 100%),
+    linear-gradient(180deg, rgba(6, 11, 18, 0.05) 50%, rgba(6, 11, 18, 0.75) 100%) !important;
+}
+.home-modern .hero-content { top: 46% !important; max-width: 640px; }
+.home-modern .hero h1 { font-size: clamp(44px, 6.2vw, 84px) !important; line-height: 1.02 !important; }
+.home-modern .hero-kicker { letter-spacing: .28em !important; font-size: 11px !important; color: var(--t-amber) !important; }
+.home-modern .hero-kicker span { background: var(--t-amber) !important; }
+.home-modern .hero-description { font-size: 15px !important; line-height: 1.7 !important; max-width: 460px; }
+.home-modern .hero-actions { display: flex !important; flex-wrap: wrap !important; align-items: center !important; gap: 14px !important; margin-top: 30px !important; }
+.home-modern .hero-actions .button { min-height: 50px; padding: 0 24px !important; font-size: 13px !important; }
+
+/* "Descubrir el mapa": botón secundario translúcido con ícono circular (ya no se monta sobre otros). */
+.home-modern .hero-text-link {
+  position: relative; display: inline-flex !important; align-items: center; gap: 10px; min-height: 50px;
+  padding: 0 20px 0 6px; border-radius: 999px; font-size: 13px !important; font-weight: 600;
+  color: #fff !important; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(10px); overflow: hidden; transition: background .25s, border-color .25s, transform .25s;
+}
+.home-modern .hero-text-link:hover { background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.5); }
+.hero-link-icon {
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.35);
+  animation: hero-bob 2.2s ease-in-out infinite;
+}
+@keyframes hero-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+
+.home-modern .hero-feature { right: 6% !important; bottom: 150px !important; width: 250px !important; padding: 18px !important; }
+.home-modern .hero-bottom { bottom: 120px !important; }
+
+/* Buscador translúcido superpuesto al hero (sin pestañas duplicadas). */
+.home-search-wrap { margin: -92px auto 0 !important; width: min(1100px, 90%) !important; }
+.home-modern .home-search {
+  background: var(--t-glass) !important; backdrop-filter: blur(18px);
+  border: 1px solid var(--t-line) !important; border-radius: 24px !important; padding: 14px 14px 14px 22px !important;
+}
+.home-search small { letter-spacing: .16em !important; font-weight: 700 !important; }
+.home-search-submit { min-height: 56px !important; padding-inline: 30px !important; border-radius: 16px !important; font-size: 13px !important; }
+
+@media (max-width: 900px) {
+  .home-modern .hero-feature { display: none !important; }
+  .home-modern .hero-bottom { display: none !important; }
+}
+@media (max-width: 650px) {
+  .home-modern .hero { height: 640px !important; min-height: 0 !important; border-radius: 0 0 28px 28px; }
+  .home-modern .hero-content { top: 44% !important; }
+  .home-modern .hero-actions .button, .home-modern .hero-text-link { min-height: 46px; font-size: 12px !important; }
+  .home-search-wrap { margin: -70px auto 0 !important; }
+  .home-modern .home-search { padding: 10px 10px 10px 16px !important; }
+  .home-search-submit { min-height: 48px !important; padding-inline: 16px !important; }
+}
+
+/* ---------- Encabezados de sección ---------- */
+.section-heading { gap: 20px; }
+.section-heading h2, .intro-grid h2, .map-heading h2 { font-size: clamp(30px, 3.6vw, 48px) !important; line-height: 1.08 !important; }
+.eyebrow { font-size: 11px !important; }
+.under-link {
+  display: inline-flex !important; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px;
+  border: 1px solid var(--t-line); font-size: 12px !important; letter-spacing: .04em;
+  transition: border-color .25s, background .25s;
+}
+.under-link:hover { border-color: var(--t-green); background: var(--t-green-tint); }
+
+/* Íconos de confianza en hexágono (como "More Than Just a Stay"). */
+.home-modern .trust-row > div > svg {
+  width: 52px !important; height: 52px !important; padding: 14px; flex: none; color: var(--t-green) !important;
+  background: var(--t-green-tint); clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
+}
+.home-modern .trust-row b { font-size: 14px !important; }
+.home-modern .trust-row small { font-size: 12px !important; }
+
+/* ---------- Tarjetas de categoría ---------- */
+.category-tiles {
+  display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px !important;
+  margin: 28px 0 30px !important; overflow: visible !important;
+}
+.quick-filters.category-tiles button.category-tile {
+  position: relative; height: 200px; width: auto !important; min-width: 0 !important; aspect-ratio: auto !important; padding: 0 !important; border: 0 !important; border-radius: 20px !important;
+  overflow: hidden; cursor: pointer; text-align: left; background: var(--t-soft) !important; color: #fff !important;
+  box-shadow: var(--t-shadow-sm); isolation: isolate;
+  transition: transform .35s cubic-bezier(.2, .8, .2, 1), box-shadow .35s;
+}
+.category-tile-image { position: absolute !important; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; transition: transform .7s cubic-bezier(.2, .8, .2, 1); }
+.category-tile-placeholder { background: linear-gradient(135deg, var(--t-green-dark), var(--t-green)); }
+.category-tile-shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(6, 11, 18, 0) 30%, rgba(6, 11, 18, 0.85) 100%); }
+.category-tile-copy { position: absolute; left: 16px; right: 16px; bottom: 14px; display: grid; gap: 3px; }
+.category-tile-copy b { font-family: var(--t-heading); font-weight: var(--t-heading-weight); font-size: 19px; color: #fff; }
+.category-tile-copy small { font-size: 11px; color: rgba(255, 255, 255, 0.78); }
+.category-tile-arrow {
+  position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(6px); color: #fff; transition: transform .35s, background .35s;
+}
+.quick-filters.category-tiles button.category-tile:hover { transform: translateY(-4px); box-shadow: var(--t-shadow); }
+.category-tile:hover .category-tile-image { transform: scale(1.08); }
+.category-tile:hover .category-tile-arrow { transform: rotate(45deg); }
+.quick-filters.category-tiles button.category-tile.filter-active { background: var(--t-soft) !important; color: #fff !important; outline: 3px solid var(--t-green); outline-offset: 3px; }
+.category-tile.filter-active .category-tile-arrow { background: var(--t-green); color: var(--t-on-primary); }
+@media (max-width: 900px) {
+  .category-tiles { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 46%; overflow-x: auto !important; scroll-snap-type: x mandatory; padding: 4px 4px 10px !important; }
+  .quick-filters.category-tiles button.category-tile { scroll-snap-align: start; height: 170px; }
+}
+@media (max-width: 650px) { .category-tiles { grid-auto-columns: 62%; } }
+
+/* ---------- Tarjetas de inmueble (estilo "Handpicked Luxury Homes") ---------- */
+.property-card .card-image { aspect-ratio: 4 / 3; height: auto !important; }
+.property-card .card-image img { transition: transform .8s cubic-bezier(.2, .8, .2, 1); }
+.property-card:hover .card-image img { transform: scale(1.06); }
+.card-info { padding: 16px 18px 18px !important; }
+.card-specs { gap: 14px !important; }
+.card-price b { font-size: 18px !important; }
+[data-theme="dark"] .card-info h3 { font-weight: 500 !important; font-size: 20px !important; }
+
+/* ---------- Secciones en modo oscuro: profundidad tipo "noche" ---------- */
+[data-theme="dark"] .home-modern .properties-section { background: linear-gradient(180deg, var(--t-bg), #0d1420) !important; }
+[data-theme="dark"] .home-modern .map-section { background: #0d1420 !important; }
+[data-theme="dark"] .home-modern .advisor-section { background: var(--t-surface) !important; }
+[data-theme="dark"] .home-modern .closing-cta {
+  background: radial-gradient(ellipse at 50% 0%, rgba(201, 164, 92, 0.16), transparent 60%), var(--t-bg) !important;
+}
+[data-theme="dark"] .services-cta .button-gold, [data-theme="dark"] .owner-project-note .button-gold {
+  background: var(--t-on-primary) !important; color: var(--t-green) !important; border-color: var(--t-on-primary) !important;
+}
+[data-theme="dark"] .nav { background: rgba(10, 16, 26, 0.82) !important; }
+[data-theme="dark"] .brand-mark { color: var(--t-green) !important; }
+
+/* Los acentos de los títulos usan la misma familia que el título (serif en modo oscuro, en cursiva). */
+h1 em, h2 em, .hero h1 em, .section-heading h2 em, .intro-grid h2 em, .closing-cta h2 em, .map-heading h2 em, .advisor-copy h2 em { font-family: inherit !important; }
+[data-theme="dark"] h1 em, [data-theme="dark"] h2 em { font-style: italic !important; }
+.quick-filters.category-tiles .category-tile span { border: 0 !important; background-color: transparent; }
+.quick-filters.category-tiles .category-tile .category-tile-arrow { background: rgba(255, 255, 255, 0.18) !important; }
+.quick-filters.category-tiles .category-tile.filter-active .category-tile-arrow { background: var(--t-green) !important; color: var(--t-on-primary) !important; }
+.quick-filters.category-tiles .category-tile .category-tile-copy { padding: 0 !important; }
