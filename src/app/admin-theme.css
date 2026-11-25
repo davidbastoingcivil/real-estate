@@ -155,3 +155,52 @@
 .admin-login-card input:focus { outline: none !important; border-color: var(--t-green) !important; background: var(--t-surface) !important; box-shadow: 0 0 0 4px var(--t-green-tint) !important; }
 .admin-login-card p, .admin-login-card small { color: var(--t-muted) !important; }
 .admin-login-card .button { min-height: 48px; }
+
+/* ---------- Personalización y catálogo heredado (/admin/customize) ---------- */
+.admin-content, .admin-shell { color: var(--t-ink) !important; }
+.admin-topbar, .admin-cms-topbar { background: var(--t-surface) !important; box-shadow: var(--t-shadow-sm); }
+.admin-page-title h1 { font-family: var(--t-heading) !important; font-weight: var(--t-heading-weight) !important; }
+.admin-listing {
+  background: var(--t-surface) !important; border: 1px solid var(--t-line) !important; border-radius: 18px !important;
+  box-shadow: var(--t-shadow-sm); color: var(--t-ink) !important; transition: transform .3s cubic-bezier(.2, .8, .2, 1), box-shadow .3s, border-color .3s;
+}
+.admin-listing:hover { transform: translateY(-2px); box-shadow: var(--t-shadow); border-color: var(--t-green) !important; }
+.admin-listing-info h2, .admin-listing-info h3, .admin-listing-info b, .admin-listing-info strong { color: var(--t-ink) !important; font-family: var(--t-heading) !important; font-weight: var(--t-heading-weight) !important; }
+.admin-listing-info p, .admin-listing-info small { color: var(--t-muted) !important; }
+.admin-listing-info .published { color: #2f9d62 !important; }
+.admin-listing-info .unpublished { color: #c96a3c !important; }
+.admin-listing-info > b:last-child, .admin-listing-info .price { color: var(--t-green) !important; }
+.admin-thumb { background: var(--t-soft) !important; border-radius: 12px !important; }
+.admin-listing-actions button { background: var(--t-soft) !important; color: var(--t-ink) !important; border: 1px solid var(--t-line) !important; border-radius: 12px !important; }
+.admin-listing-actions button:hover { background: var(--t-green) !important; color: var(--t-on-primary) !important; border-color: var(--t-green) !important; }
+.admin-listing-actions button.featured-active { background: var(--t-green-tint) !important; color: var(--t-amber) !important; border-color: var(--t-amber) !important; }
+.admin-listing-actions button:last-child { color: #e0645c !important; }
+.admin-listing-actions button:last-child:hover { background: #d9534f !important; color: #fff !important; border-color: #d9534f !important; }
+
+.admin-form-card {
+  background: var(--t-surface) !important; border: 1px solid var(--t-line) !important; border-radius: 22px !important;
+  box-shadow: var(--t-shadow-sm); color: var(--t-ink) !important;
+}
+.admin-form-card h2 { color: var(--t-ink) !important; font-size: 15px !important; }
+.admin-form-card h2 svg { color: var(--t-green) !important; }
+.admin-label, .admin-check { color: var(--t-text) !important; }
+.admin-check input { accent-color: var(--t-green) !important; }
+.theme-option {
+  background: var(--t-soft) !important; color: var(--t-text) !important; border: 1px solid var(--t-line) !important;
+  border-radius: 999px !important; padding: 8px 14px !important; font-size: 12px !important; transition: border-color .2s, transform .2s;
+}
+.theme-option:hover { border-color: var(--t-green) !important; transform: translateY(-1px); }
+.color-field { background: var(--t-soft) !important; color: var(--t-text) !important; border-radius: 14px !important; border: 1px solid var(--t-line) !important; font-size: 12px !important; }
+.color-field code { color: var(--t-muted) !important; }
+.color-field input { border-radius: 8px !important; }
+.photo-tile, .brand-image-preview, .admin-cms-image-placeholder { background: var(--t-soft) !important; border-radius: 14px !important; overflow: hidden; }
+.photo-tile button { background: var(--t-surface) !important; color: #e0645c !important; border-radius: 50% !important; }
+.photo-tile small { background: var(--t-green) !important; color: var(--t-on-primary) !important; border-radius: 999px !important; }
+.admin-editor { background: var(--t-surface) !important; color: var(--t-ink) !important; border-radius: 24px !important; border: 1px solid var(--t-line) !important; animation: sheet-up .45s cubic-bezier(.2, .8, .2, 1) both; }
+.admin-editor > header h2 { color: var(--t-ink) !important; font-family: var(--t-heading) !important; }
+.admin-editor-actions { background: var(--t-surface) !important; border-top: 1px solid var(--t-line) !important; }
+.admin-editor-overlay { background: rgba(5, 9, 15, 0.6) !important; backdrop-filter: blur(4px); }
+.admin-notice, .admin-osm-enrichment { background: var(--t-soft) !important; color: var(--t-text) !important; border: 1px solid var(--t-line) !important; border-radius: 16px !important; }
+.admin-cms-remote-media input, .drive-photo-entry input, .hero-upload-row input { background: var(--t-soft) !important; color: var(--t-ink) !important; border: 1.5px solid transparent !important; border-radius: 12px !important; }
+.admin-status { color: var(--t-muted) !important; }
+.admin-cms-sync-badge.no_identifier { background: var(--t-green-tint) !important; color: var(--t-amber) !important; }

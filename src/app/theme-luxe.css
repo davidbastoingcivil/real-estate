@@ -168,3 +168,22 @@ h1 em, h2 em, .hero h1 em, .section-heading h2 em, .intro-grid h2 em, .closing-c
 .quick-filters.category-tiles .category-tile .category-tile-arrow { background: rgba(255, 255, 255, 0.18) !important; }
 .quick-filters.category-tiles .category-tile.filter-active .category-tile-arrow { background: var(--t-green) !important; color: var(--t-on-primary) !important; }
 .quick-filters.category-tiles .category-tile .category-tile-copy { padding: 0 !important; }
+
+/* Componentes de análisis (GeoAI / valuación) y formulario de propietarios en ambos temas. */
+.geoai-metric-grid > div, .geoai-poi-count-grid > div, .avm-empty, .avm-loading, .owner-form-wrap {
+  background: var(--t-surface) !important; color: var(--t-ink) !important; border: 1px solid var(--t-line) !important; border-radius: 16px !important;
+}
+.geoai-metric-grid > div *, .geoai-poi-count-grid > div * { color: inherit; }
+.geoai-mode-switch button { background: var(--t-surface) !important; color: var(--t-text) !important; border: 1px solid var(--t-line) !important; border-radius: 999px !important; }
+.geoai-mode-switch button.active, .geoai-mode-switch button[aria-pressed="true"] { background: var(--t-green) !important; color: var(--t-on-primary) !important; border-color: var(--t-green) !important; }
+.avm-section-title span { background: var(--t-surface) !important; color: var(--t-ink) !important; }
+.owner-form-wrap { background: var(--t-bg) !important; border: 0 !important; }
+
+/* Teléfono: una tarjeta de inmueble por fila para que los datos se lean completos. */
+@media (max-width: 650px) {
+  .property-grid, .search-layout .property-grid, #propiedades .property-grid, .app-page .property-grid {
+    grid-template-columns: minmax(0, 1fr) !important; gap: 16px !important;
+  }
+  .property-card .card-image { aspect-ratio: 16 / 11; }
+  .card-info h3, .app-page .card-info h3, .home-modern .card-info h3 { font-size: 20px !important; }
+}
