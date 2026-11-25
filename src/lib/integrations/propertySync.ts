@@ -17,7 +17,7 @@ export type PropertySyncSummary = {
 type PropertyRecord = {
   id: number; lat: number | string | null; lng: number | string | null;
   municipality: string | null; municipality_code: string | null; ["ubicación"]: string | null;
-  cadastral_id: string | null; national_cadastral_number: string | null;
+  cadastral_id: string | null; national_cadastral_number: string | null; chip: string | null;
 };
 
 const validPoint = (lat: number, lng: number) => Number.isFinite(lat) && Number.isFinite(lng)
@@ -40,7 +40,7 @@ export async function syncPropertyIntegrations(
   { force = false }: { force?: boolean } = {},
 ): Promise<PropertySyncSummary> {
   const { data: row, error } = await supabase.from("properties")
-    .select("id,lat,lng,municipality,municipality_code,ubicación,cadastral_id,national_cadastral_number")
+    .select("id,lat,lng,municipality,municipality_code,ubicación,cadastral_id,national_cadastral_number,chip")
     .eq("id", propertyId).maybeSingle();
   if (error || !row) throw new Error(error?.message || "No se encontró el inmueble para sincronizar.");
   const property = row as unknown as PropertyRecord;
@@ -49,7 +49,7 @@ export async function syncPropertyIntegrations(
   const hasPoint = validPoint(lat, lng);
 
   const [{ data: officialCache }, { data: geoCache }] = await Promise.all([
-    supabase.from("property_official_data").select("status").eq("property_id", propertyId).maybeSingle(),
+    supabase.from("property_official_data").select("status,source,details,cadastral_number").eq("property_id", propertyId).maybeSingle(),
     supabase.from("property_geo_analytics").select("status").eq("property_id", propertyId).maybeSingle(),
   ]);
   const officialNeeded = force || !officialCache || officialCache.status === "pending" || officialCache.status === "error";
@@ -90,6 +90,22 @@ export async function syncPropertyIntegrations(
 
         // 2. Municipal indicators (also tell us who manages the cadastre).
         const territorial = municipalityCode ? await fetchTerritorialData(municipalityCode).catch(() => null) : null;
+
+        // An imported Catastro Bogotá parcel stays authoritative while CHIP/NPN still match.
+        const imported = officialCache?.source === "catastro_bogota" ? officialCache : null;
+        const importedChip = imported && typeof (imported.details as { chip?: unknown } | null)?.chip === "string" ? (imported.details as { chip: string }).chip : null;
+        const npnNow = (property.national_cadastral_number || "").replace(/\D/g, "");
+        if (imported && ((importedChip && importedChip === (property.chip || "").toUpperCase()) || (imported.cadastral_number && imported.cadastral_number === npnNow))) {
+          const now = new Date().toISOString();
+          const { error: keepError } = await supabase.from("property_official_data").update({
+            status: "verified",
+            ...(territorial ? { territorial: territorialJson(territorial) } : {}),
+            synced_at: now, updated_at: now,
+          }).eq("property_id", propertyId);
+          if (keepError) throw new Error(`No se pudo actualizar la caché oficial: ${keepError.message}`);
+          official = { status: "verified", message: "Se conservan los datos importados de Catastro Bogotá; indicadores municipales actualizados." };
+          return { propertyId, municipalityCode, official, osm: await osmPromise };
+        }
         const manager = territorial?.cadastralStats?.manager ?? null;
 
         // 3. Parcel lookup.
@@ -100,6 +116,8 @@ export async function syncPropertyIntegrations(
         if ((!lookup || lookup.found !== true) && hasPoint && managerIsIgac(manager)) lookup = await lookupCadastralByPoint(lat, lng);
 
         const base = {
+          source: "croma",
+          details: {},
           municipality_code: municipalityCode,
           municipality: property.municipality,
           department: property["ubicación"],
@@ -119,6 +137,8 @@ export async function syncPropertyIntegrations(
           const cadastralNumber = (text(parcel.cadastral_number) || "").replace(/\D/g, "");
           await write("verified", {
             ...base,
+            source: "croma",
+            details: {},
             municipality_code: municipalityCode || parcelMunicipality,
             municipality: text(parcel.municipality) || property.municipality,
             cadastral_number: /^\d{30}$/.test(cadastralNumber) ? cadastralNumber : null,

@@ -61,7 +61,7 @@ export type CadastralReportData = {
   };
   officialData: {
     recordFound: boolean | null;
-    lookupMethod: "cadastral_id" | "coordinates" | "none";
+    lookupMethod: "cadastral_id" | "coordinates" | "import" | "none";
     cadastralNumber: string | null;
     cadastralAppraisal: number | null;
     officialBuiltArea: number | null;
@@ -76,6 +76,16 @@ export type CadastralReportData = {
     parcelAddress: string | null;
     cadastralUpdate: { status: string | null; updateYear: number | null; yearsSinceUpdate: number | null; zone: string | null } | null;
     buildings: Array<{ use: string; areaM2: number | null; floors: number | null; bathrooms: number | null }>;
+    bogota: {
+      chip: string | null; cadastralId: string | null; nationalCadastralNumber: string | null;
+      officialAddress: string | null; additionalAddress: string | null; neighbourhood: string | null; neighbourhoodCode: string | null;
+      lotAreaM2: number | null; builtAreaM2: number | null; parcelType: string | null; parcelClass: string | null;
+      economicDestination: string | null; horizontalProperty: string | null; housingUse: string | null;
+      uses: Array<{ use: string; areaM2: number | null }>;
+      constructionYear: number | null; ageYears: number | null; formationYear: number | null; updateYear: number | null;
+      incorporationDate: string | null; physicalHomogeneousZone: string | null; qualificationScore: number | null;
+      qualification: Record<string, string>;
+    } | null;
     municipalStatistics: {
       year: number | null;
       appraisalTotal: number | null;
@@ -92,6 +102,10 @@ export type CadastralReportData = {
     poiSource: "OpenStreetMap" | "No disponible";
     poiFetchedAt: string | null;
     dane: {
+      municipality: string | null;
+      municipalityCode: string | null;
+      ipmUrban: number | null;
+      ipmRural: number | null;
       censusAvailable: boolean;
       ipmAvailable: boolean;
       asOf: string | null;

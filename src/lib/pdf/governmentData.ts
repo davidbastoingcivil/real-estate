@@ -17,6 +17,8 @@ const CACHE_STATUSES = new Set(["verified", "not_found", "manager_not_igac", "no
 
 type OfficialSnapshot = {
   source: "cache" | "live";
+  origin: "croma" | "catastro_bogota" | null;
+  details: JsonRecord | null;
   status: string | null;
   message: string | null;
   method: CadastralLookup["method"];
@@ -43,10 +45,16 @@ function territorialFromCache(value: unknown): TerritorialData | null {
 /** Prefer the data the admin sync stored; fall back to live Croma queries. */
 async function officialSnapshot(property: CadastralProperty, supabase: SupabaseClient, municipalityCode: string | null, validPoint: boolean): Promise<OfficialSnapshot> {
   const { data: cache } = await supabase.from("property_official_data").select("*").eq("property_id", property.id).maybeSingle();
-  if (cache && CACHE_STATUSES.has(String(cache.status))) {
+  // Ignore a cache written for another municipality (e.g. the listing moved).
+  const cacheMatches = cache && (!municipalityCode || !cache.municipality_code || cache.municipality_code === municipalityCode);
+  if (cache && cacheMatches && CACHE_STATUSES.has(String(cache.status))) {
     const verified = cache.status === "verified";
+    const origin = cache.source === "catastro_bogota" ? "catastro_bogota" as const : "croma" as const;
+    const cachedTerritorial = territorialFromCache(cache.territorial);
     return {
       source: "cache",
+      origin,
+      details: origin === "catastro_bogota" ? asObject(cache.details) : null,
       status: String(cache.status),
       message: text(cache.message),
       method: (cache.lookup_method as CadastralLookup["method"]) || "none",
@@ -58,13 +66,13 @@ async function officialSnapshot(property: CadastralProperty, supabase: SupabaseC
         economic_destination: cache.economic_destination, vigencia: cache.vigencia, buildings: cache.buildings,
       } : null,
       checkedAt: text(cache.source_checked_at) || text(cache.synced_at),
-      servedFrom: "caché sincronizada desde Croma (IGAC/DANE)",
+      servedFrom: origin === "catastro_bogota" ? "archivo de Catastro Bogotá (UAECD)" : "caché sincronizada desde Croma (IGAC/DANE)",
       manager: text(cache.cadastral_manager),
-      territorial: territorialFromCache(cache.territorial),
+      territorial: cachedTerritorial ?? (municipalityCode && cromaConfigured() ? await fetchTerritorialData(municipalityCode).catch(() => null) : null),
     };
   }
 
-  const empty: OfficialSnapshot = { source: "live", status: null, message: null, method: "none", found: null, parcel: null, checkedAt: null, servedFrom: null, manager: null, territorial: null };
+  const empty: OfficialSnapshot = { source: "live", origin: null, details: null, status: null, message: null, method: "none", found: null, parcel: null, checkedAt: null, servedFrom: null, manager: null, territorial: null };
   if (!cromaConfigured()) return { ...empty, message: "CROMA_API_KEY no está configurada en el servidor." };
 
   const territorial = municipalityCode ? await fetchTerritorialData(municipalityCode).catch(() => null) : null;
@@ -78,6 +86,7 @@ async function officialSnapshot(property: CadastralProperty, supabase: SupabaseC
   } catch { /* reported below as a warning */ }
   return {
     ...empty,
+    origin: "croma",
     status: lookup ? (lookup.found ? "verified" : "not_found") : !managerIsIgac(manager) ? "manager_not_igac" : null,
     method: lookup?.method ?? "none",
     found: lookup?.found ?? null,
@@ -86,6 +95,38 @@ async function officialSnapshot(property: CadastralProperty, supabase: SupabaseC
     servedFrom: lookup?.servedFrom ?? null,
     manager,
     territorial,
+  };
+}
+
+function bogotaSummary(details: JsonRecord): NonNullable<CadastralReportData["officialData"]["bogota"]> {
+  const str = (key: string) => text(details[key]);
+  const num = (key: string) => numberOrNull(details[key]);
+  const uses = Array.isArray(details.uses) ? details.uses.map(asObject).filter((item): item is JsonRecord => Boolean(item)) : [];
+  const quality = asObject(details.qualification) || {};
+  return {
+    chip: str("chip"),
+    cadastralId: str("cadastralId"),
+    nationalCadastralNumber: str("nationalCadastralNumber"),
+    officialAddress: str("officialAddress"),
+    additionalAddress: str("additionalAddress"),
+    neighbourhood: str("neighbourhood"),
+    neighbourhoodCode: str("neighbourhoodCode"),
+    lotAreaM2: num("lotAreaM2"),
+    builtAreaM2: num("builtAreaM2"),
+    parcelType: str("parcelType"),
+    parcelClass: str("parcelClass"),
+    economicDestination: str("economicDestination"),
+    horizontalProperty: str("horizontalProperty"),
+    housingUse: str("housingUse"),
+    uses: uses.slice(0, 6).map(item => ({ use: text(item.use) || "Uso sin nombre", areaM2: numberOrNull(item.areaM2) })),
+    constructionYear: num("constructionYear"),
+    ageYears: num("ageYears"),
+    formationYear: num("formationYear"),
+    updateYear: num("updateYear"),
+    incorporationDate: str("incorporationDate"),
+    physicalHomogeneousZone: str("physicalHomogeneousZone"),
+    qualificationScore: num("qualificationScore"),
+    qualification: Object.fromEntries(Object.entries(quality).filter(([, value]) => typeof value === "string")) as Record<string, string>,
   };
 }
 
@@ -154,6 +195,8 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
     warnings.push(`El catastro de ${municipality || "este municipio"} lo administra ${manager || "un gestor distinto del IGAC"}; el IGAC no publica sus predios. Avalúo, áreas y número predial deben tomarse del certificado catastral.`);
   } else if (snapshot.status === "not_found" || snapshot.found === false) {
     warnings.push(snapshot.method === "cadastral_id" ? "El Número Predial Nacional registrado no aparece en el IGAC." : "No hay un predio IGAC en las coordenadas registradas.");
+  } else if (snapshot.origin === "catastro_bogota") {
+    // Imported from the official district file: no extra warning.
   } else if (snapshot.status === "verified" && snapshot.method === "coordinates") {
     warnings.push("Predio identificado por coordenadas: confirma con el certificado catastral que corresponde al inmueble.");
   } else if (!snapshot.status) {
@@ -237,6 +280,7 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
         floors: numberOrNull(item.floors),
         bathrooms: numberOrNull(item.bathrooms),
       })),
+      bogota: snapshot.origin === "catastro_bogota" && snapshot.details ? bogotaSummary(snapshot.details) : null,
       municipalStatistics: stats ? {
         year: stats.year,
         appraisalTotal: stats.appraisalTotal,
@@ -264,6 +308,10 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
       poiSource: livePois?.available ? "OpenStreetMap" : "No disponible",
       poiFetchedAt: livePois?.available ? livePois.fetchedAt : null,
       dane: {
+        municipality: municipality || null,
+        municipalityCode,
+        ipmUrban: ipm?.urban ?? null,
+        ipmRural: ipm?.rural ?? null,
         censusAvailable: census !== null,
         ipmAvailable: ipm !== null,
         asOf: territorial?.asOf ?? null,
@@ -286,12 +334,22 @@ export async function getGovernmentReportData(property: CadastralProperty, supab
   return data;
 }
 
-export async function addReportImage(data: CadastralReportData, images: string[]) {
+/**
+ * Embed only photos that belong to this listing: videos, foreign hosts and any
+ * file also used by another property (shared stock or promotional art) are skipped.
+ */
+export async function addReportImage(data: CadastralReportData, images: string[], supabase?: SupabaseClient) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!supabaseUrl) return data;
   let allowedHost: string;
   try { allowedHost = new URL(supabaseUrl).host; } catch { return data; }
-  const imageUrls = images.filter(value => !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(value)).slice(0, 3);
+  const candidates = images.filter(value => !/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(value)).slice(0, 6);
+  const shared = supabase ? await Promise.all(candidates.map(async url => {
+    const { count, error } = await supabase.from("properties").select("id", { count: "exact", head: true })
+      .contains("images", [url]).neq("id", data.subjectProperty.id);
+    return !error && (count ?? 0) > 0;
+  })) : candidates.map(() => false);
+  const imageUrls = candidates.filter((_, index) => !shared[index]).slice(0, 3);
   if (!imageUrls.length) return data;
   for (const imageUrl of imageUrls) try {
     const original = new URL(imageUrl);

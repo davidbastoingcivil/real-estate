@@ -67,6 +67,12 @@ El panel muestra el estado de cada ficha y un botón **Sincronizar** para repeti
 
 El IGAC solo publica predios de municipios cuyo catastro administra (por ejemplo Carmen de Apicalá). Bogotá (UAECD), Tunja y otros gestores propios aparecen como “gestor no IGAC”: registra avalúo, áreas y número predial desde el certificado catastral.
 
+### Catastro Bogotá (UAECD)
+
+En la edición de un inmueble de Bogotá aparece **Importar CSV de Catastro Bogotá**. Acepta la descarga de lote o predio de [IDECA](https://ideca.gov.co/recursos/los-mas-consultados/lote), que viene separada por punto y coma con una fila por uso, y el `Predio.csv` de datos abiertos (PRECHIP, PRECLASE, PREATERRE…). El archivo se cruza con la ficha por CHIP, número predial o cédula catastral y completa esos campos y las áreas oficiales. Guarda además barrio, dirección oficial, destino, usos con su área, vetustez, vigencias, zona homogénea física, puntaje y códigos de calificación. El PDF agrega una página “Ficha predial Catastro Bogotá” con los campos clave, y la sincronización con Croma no sobrescribe un predio importado.
+
+El informe solo incluye fotos propias del inmueble: descarta videos y cualquier imagen que también use otra ficha. Si no queda ninguna, muestra “Sin fotografía registrada del inmueble”.
+
 El mapa del informe usa, en orden: Mapbox satelital si existe `MAPBOX_ACCESS_TOKEN`, Esri World Imagery y OpenStreetMap, ambos sin clave. Las teselas se componen en el servidor con `sharp`.
 
 ## Contacto

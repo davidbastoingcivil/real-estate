@@ -20,7 +20,7 @@ function cadastralProperty(databaseRow: Record<string, unknown>): CadastralPrope
     location: String(databaseRow.location || "Ubicación no registrada"), municipality: typeof databaseRow.municipality === "string" ? databaseRow.municipality : null,
     municipality_code: typeof databaseRow.municipality_code === "string" ? databaseRow.municipality_code : null,
     department: typeof databaseRow.department === "string" ? databaseRow.department : typeof databaseRow["ubicación"] === "string" ? databaseRow["ubicación"] as string : null,
-    cadastral_id: typeof databaseRow.national_cadastral_number === "string" ? databaseRow.national_cadastral_number : typeof databaseRow.cadastral_id === "string" ? databaseRow.cadastral_id : null,
+    cadastral_id: typeof databaseRow.cadastral_id === "string" ? databaseRow.cadastral_id : null,
     chip: typeof databaseRow.chip === "string" ? databaseRow.chip : null,
     national_cadastral_number: typeof databaseRow.national_cadastral_number === "string" ? databaseRow.national_cadastral_number : null,
     real_estate_registration: typeof databaseRow.real_estate_registration === "string" ? databaseRow.real_estate_registration : null,
@@ -35,7 +35,7 @@ function cadastralProperty(databaseRow: Record<string, unknown>): CadastralPrope
 
 async function renderReport(property: CadastralProperty, supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, financialSimulation: CadastralReportData["financialSimulation"], client: CadastralReportData["client"]) {
   const report = await getGovernmentReportData(property, supabase);
-  const reportWithImage = await addReportImage(report, property.images);
+  const reportWithImage = await addReportImage(report, property.images, supabase);
   reportWithImage.client = client;
   reportWithImage.financialSimulation = financialSimulation;
   const document = createElement(ValuationReportDocument, { data: reportWithImage }) as unknown as Parameters<typeof renderToBuffer>[0];

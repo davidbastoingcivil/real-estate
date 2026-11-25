@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { syncPropertyIntegrations, type PropertySyncSummary } from "@/lib/integrations/propertySync";
+import { isBogotaChip, parseBogotaCadastralCsv, type BogotaParcel } from "@/lib/integrations/bogotaCadastre";
+import { cromaConfigured, fetchTerritorialData } from "@/lib/integrations/croma";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AudioTour, ProjectDossier, VideoPresentation } from "@/data/properties";
 
@@ -281,6 +283,95 @@ export async function resyncPropertyIntegrations(id: number): Promise<{ success:
     return { success: true, summary };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "No se pudo sincronizar el inmueble." };
+  }
+}
+
+/**
+ * Import a Catastro Bogotá (UAECD / IDECA) parcel export for one property.
+ * Matches the file to the property by CHIP, NPN or cédula catastral, fills the
+ * cadastral fields of the record and stores the parcel as verified official data.
+ */
+export async function importBogotaCadastralCsv(id: number, csvText: string): Promise<{ success: true; parcel: BogotaParcel } | { success: false; error: string }> {
+  try {
+    if (!Number.isSafeInteger(id) || id < 1) throw new Error("El identificador del inmueble no es válido.");
+    if (typeof csvText !== "string" || !csvText.trim()) throw new Error("El archivo está vacío.");
+    if (csvText.length > 5_000_000) throw new Error("El archivo supera 5 MB. Descarga solo el predio del inmueble.");
+    const supabase = await authorizedClient();
+    const { data: property, error } = await supabase.from("properties")
+      .select("id,chip,cadastral_id,national_cadastral_number,municipality,municipality_code")
+      .eq("id", id).maybeSingle();
+    if (error) throw error;
+    if (!property) throw new Error("El inmueble ya no existe.");
+    if (property.municipality_code && property.municipality_code !== "11001") {
+      throw new Error(`Este inmueble está registrado con DIVIPOLA ${property.municipality_code}; el archivo de Catastro Bogotá solo aplica a Bogotá (11001).`);
+    }
+
+    const parcels = parseBogotaCadastralCsv(csvText);
+    const clean = (value: string | null | undefined) => (value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    const match = parcels.find(parcel =>
+      (property.chip && parcel.chip === clean(property.chip))
+      || (property.national_cadastral_number && parcel.nationalCadastralNumber === clean(property.national_cadastral_number))
+      || (property.cadastral_id && parcel.cadastralId && clean(parcel.cadastralId) === clean(property.cadastral_id)))
+      || (parcels.length === 1 ? parcels[0] : null);
+    if (!match) {
+      const options = parcels.slice(0, 5).map(parcel => `${parcel.chip} (${parcel.officialAddress || "sin dirección"})`).join(", ");
+      throw new Error(`El archivo tiene ${parcels.length} predios y ninguno coincide con el CHIP o número predial de la ficha. Registra el CHIP correcto y vuelve a importar. Predios encontrados: ${options}${parcels.length > 5 ? "…" : ""}`);
+    }
+    if (!isBogotaChip(match.chip)) throw new Error(`El CHIP ${match.chip} no tiene el formato de Catastro Bogotá (AAA0000AAAA).`);
+    if (match.nationalCadastralNumber && !match.nationalCadastralNumber.startsWith("11001")) {
+      throw new Error("El Número Predial Nacional del archivo no corresponde a Bogotá (prefijo 11001).");
+    }
+
+    // 1. Cadastral fields of the listing (the trigger marks the cache as pending).
+    const { error: updateError } = await supabase.from("properties").update({
+      chip: match.chip,
+      cadastral_id: match.cadastralId,
+      national_cadastral_number: match.nationalCadastralNumber,
+      official_lot_area: match.lotAreaM2,
+      official_built_area: match.builtAreaM2,
+      municipality_code: "11001",
+      ...(property.municipality ? {} : { municipality: "Bogotá D.C." }),
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    if (updateError) throw updateError;
+
+    // 2. Official parcel data, then municipal indicators (best effort).
+    const territorial = cromaConfigured() ? await fetchTerritorialData("11001").catch(() => null) : null;
+    const now = new Date().toISOString();
+    const { error: cacheError } = await supabase.from("property_official_data").upsert({
+      property_id: id,
+      status: "verified",
+      source: "catastro_bogota",
+      lookup_method: "import",
+      municipality_code: "11001",
+      municipality: "Bogotá D.C.",
+      department: "Bogotá D.C.",
+      cadastral_manager: "Unidad Administrativa Especial de Catastro Distrital Bogotá - UAECD",
+      cadastral_number: match.nationalCadastralNumber,
+      previous_cadastral_number: match.cadastralId,
+      address: [match.officialAddress, match.neighbourhood].filter(Boolean).join(" · ") || null,
+      appraisal: null,
+      built_area_m2: match.builtAreaM2,
+      land_area_m2: match.lotAreaM2,
+      economic_destination: match.economicDestination,
+      vigencia: { status: match.updateYear ? "Actualizado" : null, update_year: match.updateYear, formation_year: match.formationYear, zone: "urban" },
+      buildings: match.uses.map(use => ({ use: use.use, area_m2: use.areaM2, floors: null, bathrooms: null })),
+      geometry: null,
+      ...(territorial ? { territorial: { as_of: territorial.asOf, census: territorial.census, ipm: territorial.ipm, cadastral_stats: territorial.cadastralStats, errors: territorial.errors } } : {}),
+      details: match,
+      source_checked_at: now,
+      message: "Datos importados desde el archivo de Catastro Bogotá (UAECD / IDECA).",
+      synced_at: now,
+      updated_at: now,
+    }, { onConflict: "property_id" });
+    if (cacheError) throw cacheError;
+
+    scheduleIntegrationSync(supabase, id);
+    revalidatePath("/admin");
+    revalidatePath(`/admin/properties/${id}`);
+    return { success: true, parcel: match };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo importar el archivo de Catastro Bogotá." };
   }
 }
 

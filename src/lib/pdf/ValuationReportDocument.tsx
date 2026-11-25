@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
   reportGalleryImage: { width: "32%", height: 55, objectFit: "cover", borderRadius: 3 },
   reportTable: { marginBottom: 8 },
   reportTableHead: { backgroundColor: "#eef1f3", borderBottomColor: "#cbd2d8", paddingVertical: 6 },
-  reportRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e8ebed", paddingVertical: 6, paddingHorizontal: 5 },
+  reportRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e8ebed", paddingVertical: 4.5, paddingHorizontal: 5 },
   reportCell: { width: "34%", color: ink, fontSize: 7, lineHeight: 1.25, paddingRight: 5 },
   reportLabel: { width: "29%", fontFamily: "Helvetica-Bold" },
   reportDetail: { color: muted },
@@ -184,6 +184,49 @@ function NormativeAndSpatialAnalysis({ data }: { data: CadastralReportData }) {
   </>;
 }
 
+function stratumSummary(distribution: Record<string, number>) {
+  const total = Object.values(distribution).reduce((sum, value) => sum + value, 0);
+  if (!total) return "Sin dato";
+  return ["e1", "e2", "e3", "e4", "e5", "e6"].map(key => `E${key.slice(1)} ${Math.round((distribution[key] || 0) / total * 100)}%`).join(" · ");
+}
+
+function BogotaCadastrePage({ data }: { data: CadastralReportData }) {
+  const bogota = data.officialData.bogota;
+  if (!bogota) return null;
+  const area = (value: number | null) => value === null ? "Sin dato" : `${value.toLocaleString("es-CO", { maximumFractionDigits: 2 })} m²`;
+  const quality = Object.entries(bogota.qualification);
+  return <Page size="A4" style={styles.page}>
+    <ReportHeader section="CATASTRO DISTRITAL DE BOGOTÁ (UAECD)" data={data}/>
+    <Text style={styles.reportSectionTitle}>02B · FICHA PREDIAL CATASTRO BOGOTÁ</Text>
+    <View style={styles.reportTable}>
+      <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>IDENTIFICACIÓN</Text><Text style={styles.reportCell}>VALOR</Text><Text style={styles.reportCell}>DETALLE</Text></View>
+      <ReportTableRow label="CHIP" value={bogota.chip || "Sin dato"} detail="Código homologado de identificación predial"/>
+      <ReportTableRow label="Cédula catastral" value={bogota.cadastralId || "Sin dato"} detail="Identificador catastral distrital"/>
+      <ReportTableRow label="Número Predial Nacional" value={bogota.nationalCadastralNumber || "Sin dato"} detail="30 dígitos · prefijo 11001"/>
+      <ReportTableRow label="Dirección oficial" value={bogota.officialAddress || "Sin dato"} detail={bogota.additionalAddress ? `Dirección adicional: ${bogota.additionalAddress}` : "Sin dirección adicional"}/>
+      <ReportTableRow label="Barrio catastral" value={bogota.neighbourhood || "Sin dato"} detail={bogota.neighbourhoodCode ? `Código ${bogota.neighbourhoodCode}` : "Sin código"}/>
+    </View>
+    <View style={styles.reportTable}>
+      <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>CARACTERÍSTICAS DEL PREDIO</Text><Text style={styles.reportCell}>VALOR</Text><Text style={styles.reportCell}>DETALLE</Text></View>
+      <ReportTableRow label="Área de terreno" value={area(bogota.lotAreaM2)} detail="Catastro Bogotá"/>
+      <ReportTableRow label="Área construida" value={area(bogota.builtAreaM2)} detail={`Ficha: ${area(data.subjectProperty.listedAreaM2)} declarada`}/>
+      <ReportTableRow label="Tipo / clase de predio" value={bogota.parcelType || "Sin dato"} detail={bogota.parcelClass || "Sin clase"}/>
+      <ReportTableRow label="Destino económico" value={bogota.economicDestination || "Sin dato"} detail={bogota.housingUse || "Sin dato de uso de vivienda"}/>
+      <ReportTableRow label="Propiedad horizontal" value={bogota.horizontalProperty || "Sin dato"} detail="Régimen reportado por uso"/>
+      {bogota.uses.length > 0 && <ReportTableRow label="Usos y áreas" value={`${bogota.uses.length} uso(s) registrados`} detail={bogota.uses.map(use => `${use.use}${use.areaM2 !== null ? ` (${area(use.areaM2)})` : ""}`).join(" | ")}/>}
+    </View>
+    <View style={styles.reportTable}>
+      <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>CONSTRUCCIÓN Y VIGENCIAS</Text><Text style={styles.reportCell}>VALOR</Text><Text style={styles.reportCell}>DETALLE</Text></View>
+      <ReportTableRow label="Vetustez / año de construcción" value={bogota.constructionYear ? `${bogota.constructionYear}` : bogota.ageYears !== null ? `${bogota.ageYears} años` : "Sin dato"} detail={bogota.constructionYear && bogota.ageYears !== null ? `${bogota.ageYears} años de antigüedad` : "Según Catastro Bogotá"}/>
+      <ReportTableRow label="Vigencia de formación / actualización" value={`${bogota.formationYear ?? "s/d"} / ${bogota.updateYear ?? "s/d"}`} detail={bogota.incorporationDate ? `Incorporado al SIIC: ${bogota.incorporationDate}` : "Sin fecha de incorporación"}/>
+      {(bogota.physicalHomogeneousZone || bogota.qualificationScore !== null) && <ReportTableRow label="Zona homogénea física / puntaje" value={`${bogota.physicalHomogeneousZone || "s/d"} / ${bogota.qualificationScore ?? "s/d"}`} detail="Calificación de la construcción"/>}
+      {quality.length > 0 && <ReportTableRow label="Calificación (códigos)" value={quality.slice(0, 4).map(([key, value]) => `${key} ${value}`).join(" · ")} detail={quality.slice(4).map(([key, value]) => `${key} ${value}`).join(" · ") || "Estructura, acabados, baño y cocina"}/>}
+    </View>
+    <Text style={styles.sourceNote}>Fuente: archivo de Catastro Bogotá (UAECD / IDECA) cargado por el administrador. Se muestran los campos clave del predio; los códigos de calificación se reportan tal como los entrega la fuente. No reemplaza el certificado catastral ni el certificado de tradición y libertad.</Text>
+    <Footer data={data}/>
+  </Page>;
+}
+
 function ReportTableRow({ label, value, detail = "", darkMode = false }: { label: string; value: string; detail?: string; darkMode?: boolean }) {
   const cellStyle = darkMode ? styles.financeTableCell : styles.reportCell;
   return <View style={darkMode ? styles.financeTableRow : styles.reportRow}>
@@ -252,25 +295,27 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
 
     <Page size="A4" style={styles.page}>
       <ReportHeader section="FICHA TÉCNICA & CONTEXTO CATASTRAL" data={data}/>
-      {property.mainImageBase64 ? <Image src={property.mainImageBase64} style={styles.reportHeroImage}/> : <View style={styles.reportHeroPlaceholder}><Text style={{color:"#fff",fontSize:12}}>{property.title}</Text><Text style={{color:"#c6d0cb",fontSize:8}}>{property.address} · Coordenadas: {property.coordinates ? `${property.coordinates.lat.toFixed(6)}, ${property.coordinates.lng.toFixed(6)}` : "Sin registrar"}</Text></View>}
+      {property.mainImageBase64 ? <Image src={property.mainImageBase64} style={styles.reportHeroImage}/> : <View style={styles.reportHeroPlaceholder}><Text style={{color:"#e2c77f",fontSize:7,letterSpacing:1.2}}>SIN FOTOGRAFÍA REGISTRADA DEL INMUEBLE</Text><Text style={{color:"#fff",fontSize:12}}>{property.title}</Text><Text style={{color:"#c6d0cb",fontSize:8}}>{property.address} · Coordenadas: {property.coordinates ? `${property.coordinates.lat.toFixed(6)}, ${property.coordinates.lng.toFixed(6)}` : "Sin registrar"}</Text></View>}
       {property.galleryImagesBase64.length > 1 && <View style={styles.reportGallery}>{property.galleryImagesBase64.slice(1).map((image, index) => <Image key={index} src={image} style={styles.reportGalleryImage}/>)}</View>}
       <View style={styles.reportMetrics}>
-        {[["AVALÚO CATASTRAL",cop(data.officialData.cadastralAppraisal),"Referencia fiscal"],["ÁREA DE TERRENO",areaLabel(data.officialData.officialLotArea),"Fuente catastral"],["ÁREA CONSTRUIDA",areaLabel(data.officialData.officialBuiltArea),"Dato oficial disponible"],["MÉTODO DE CONSULTA",data.officialData.lookupMethod === "cadastral_id" ? "Número predial" : data.officialData.lookupMethod === "coordinates" ? "Coordenadas" : "Sin consulta","Identificador / punto"]].map(([label,value,note])=><View key={label} style={styles.reportMetric}><Text style={styles.reportMetricLabel}>{label}</Text><Text style={styles.reportMetricValue}>{value}</Text><Text style={styles.reportMetricNote}>{note}</Text></View>)}
+        {[["AVALÚO CATASTRAL",cop(data.officialData.cadastralAppraisal),"Referencia fiscal"],["ÁREA DE TERRENO",areaLabel(data.officialData.officialLotArea),"Fuente catastral"],["ÁREA CONSTRUIDA",areaLabel(data.officialData.officialBuiltArea),"Dato oficial disponible"],["MÉTODO DE CONSULTA",data.officialData.lookupMethod === "cadastral_id" ? "Número predial" : data.officialData.lookupMethod === "coordinates" ? "Coordenadas" : data.officialData.lookupMethod === "import" ? "Catastro Bogotá" : "Sin consulta","Identificador / punto"]].map(([label,value,note])=><View key={label} style={styles.reportMetric}><Text style={styles.reportMetricLabel}>{label}</Text><Text style={styles.reportMetricValue}>{value}</Text><Text style={styles.reportMetricNote}>{note}</Text></View>)}
       </View>
       <Text style={styles.reportSectionTitle}>02 · IDENTIFICACIÓN PREDIAL & INFORMACIÓN CATASTRAL</Text>
       <View style={styles.reportTable}>
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>PARÁMETRO PREDIAL</Text><Text style={styles.reportCell}>FICHA DEL INMUEBLE</Text><Text style={styles.reportCell}>DATO CATASTRAL / FUENTE</Text></View>
         <ReportTableRow label="Tipo / Destinación" value={property.type} detail={data.officialData.economicDestination || "No disponible"}/>
-        <ReportTableRow label="Cédula Catastral / CHIP" value={`${property.legal.cadastralId} / ${property.legal.chip}`} detail={property.legal.chip === "No registrado" ? "No disponible en consulta" : "Registrado en ficha"}/>
-        <ReportTableRow label="Número Predial Nacional (30D)" value={cadastralNumber} detail={data.officialData.cadastralNumber || "No disponible reportado por fuente"}/>
+        <ReportTableRow label="Cédula catastral" value={property.legal.cadastralId} detail={data.officialData.bogota?.cadastralId ? `Catastro Bogotá: ${data.officialData.bogota.cadastralId}` : property.legal.cadastralId === "No registrado" ? "No reportada por la fuente" : "Registrada en ficha"}/>
+        <ReportTableRow label="CHIP (Bogotá)" value={property.legal.chip} detail={data.officialData.bogota?.chip ? `Catastro Bogotá: ${data.officialData.bogota.chip}` : property.legal.chip === "No registrado" ? "Solo aplica a predios de Bogotá" : "Registrado en ficha"}/>
+        <ReportTableRow label="Número Predial Nacional (30 dígitos)" value={cadastralNumber} detail={data.officialData.cadastralNumber || "No reportado por la fuente"}/>
         <ReportTableRow label="Matrícula inmobiliaria" value={property.legal.realEstateId} detail="Registro suministrado en ficha"/>
         <ReportTableRow label="Coordenadas WGS84" value={property.coordinates ? `${property.coordinates.lat.toFixed(6)}, ${property.coordinates.lng.toFixed(6)}` : "Sin dato"} detail={property.coordinates ? "Punto georreferenciado" : "Sin coordenadas"}/>
         <ReportTableRow label="Área (ficha / catastro)" value={`${areaLabel(property.listedAreaM2)} declarada`} detail={data.officialData.officialBuiltArea !== null || data.officialData.officialLotArea !== null ? `Construida ${areaLabel(data.officialData.officialBuiltArea)} · terreno ${areaLabel(data.officialData.officialLotArea)}` : "Sin dato oficial"}/>
-        <ReportTableRow label="Estrato / habitaciones" value={`${property.stratum} / ${property.bedrooms}`} detail={`${data.officialData.stratum} / ${property.bedrooms} habitaciones registradas`}/>
+        <ReportTableRow label="Estrato" value={property.stratum} detail={data.officialData.stratum === "Sin dato" ? "Sin dato oficial" : "Declarado en la ficha"}/>
+        <ReportTableRow label="Habitaciones" value={`${property.bedrooms}`} detail="Declaradas en la ficha"/>
         <ReportTableRow label="Baños / parqueaderos / depósitos" value={`${property.bathrooms} / ${property.garages} / ${property.deposits}`} detail="Características de la ficha"/>
         <ReportTableRow label="Municipio / Código DIVIPOLA" value={property.address} detail={`${data.officialData.municipality || "Sin dato"}${data.officialData.municipalityCode ? ` (${data.officialData.municipalityCode})` : ""}`}/>
         <ReportTableRow label="Gestor catastral / vigencia" value={data.officialData.cadastralManager || "Sin dato"} detail={data.officialData.cadastralUpdate ? `${data.officialData.cadastralUpdate.status || "Sin estado"}${data.officialData.cadastralUpdate.updateYear ? ` · actualización ${data.officialData.cadastralUpdate.updateYear}` : ""}` : "Sin dato"}/>
-        {data.officialData.parcelAddress && <ReportTableRow label="Dirección catastral" value={data.officialData.parcelAddress} detail="Reportada por el IGAC"/>}
+        {data.officialData.parcelAddress && <ReportTableRow label="Dirección catastral" value={data.officialData.parcelAddress} detail={data.officialData.lookupMethod === "import" ? "Reportada por Catastro Bogotá (UAECD)" : "Reportada por el IGAC"}/>}
         {data.officialData.buildings.length > 0 && <ReportTableRow label="Construcciones catastrales" value={`${data.officialData.buildings.length} unidad(es)`} detail={data.officialData.buildings.slice(0, 3).map(item => `${item.use}${item.areaM2 !== null ? ` ${areaLabel(item.areaM2)}` : ""}${item.floors ? ` · ${item.floors} piso(s)` : ""}`).join(" | ")}/>}
       </View>
       {property.description && <View style={styles.section}><Text style={styles.reportSectionTitle}>DESCRIPCIÓN DEL INMUEBLE</Text><Text style={{ color: muted, fontSize: 7.5, lineHeight: 1.35 }}>{property.description}</Text></View>}
@@ -278,6 +323,8 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
       <Text style={styles.sourceNote}>Los datos oficiales (IGAC/DANE vía Croma) se sincronizan cuando el administrador guarda la ficha y se consultan en vivo si aún no existen. El avalúo catastral es una referencia fiscal, no un avalúo comercial. Si una fuente no responde o no encuentra el predio, se indica “Sin dato”.</Text>
       <Footer data={data}/>
     </Page>
+
+    <BogotaCadastrePage data={data}/>
 
     <Page size="A4" style={styles.page}>
       <ReportHeader section="ANÁLISIS NORMATIVO, ESPACIAL Y FUENTES PÚBLICAS" data={data}/>
@@ -292,15 +339,16 @@ export default function ValuationReportDocument({ data }: { data: CadastralRepor
         <ReportTableRow label="Servicios y POI (1.000 m)" value={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiCounts.commercial} puntos comerciales / ${data.geoSpatialContext.poiCounts.health} de salud` : data.geoSpatialContext.poiStatus} detail={data.geoSpatialContext.poiAvailable ? `${data.geoSpatialContext.poiSource} · movilidad ${data.geoSpatialContext.poiCounts.transport} · educación ${data.geoSpatialContext.poiCounts.education} · parques ${data.geoSpatialContext.poiCounts.parks}` : data.geoSpatialContext.poiStatus}/>
         <ReportTableRow label="Riesgos / amenazas" value={`${data.predictiveAnalysis.physicalRisks.landslide} · ${data.predictiveAnalysis.physicalRisks.flooding}`} detail="Remoción en masa / inundación"/>
       </View>
-      <Text style={styles.reportSectionTitle}>04 · PERFIL MUNICIPAL DANE Y COBERTURA</Text>
+      <Text style={styles.reportSectionTitle}>04 · PERFIL MUNICIPAL DANE · {(data.geoSpatialContext.dane.municipality || "MUNICIPIO SIN IDENTIFICAR").toUpperCase()}{data.geoSpatialContext.dane.municipalityCode ? ` (DIVIPOLA ${data.geoSpatialContext.dane.municipalityCode})` : ""}</Text>
       <View style={styles.reportTable}>
         <View style={[styles.reportRow,styles.reportTableHead]}><Text style={[styles.reportCell,styles.reportLabel]}>INDICADOR DANE</Text><Text style={styles.reportCell}>VALOR REGISTRADO</Text><Text style={styles.reportCell}>CAPA / COBERTURA</Text></View>
         <ReportTableRow label="Población / hogares" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.population?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.households?.toLocaleString("es-CO") ?? "Sin dato en fuente"}` : "Sin dato municipal"} detail="Agregado municipal · DANE"/>
         <ReportTableRow label="Viviendas / año censal" value={data.geoSpatialContext.dane.censusAvailable ? `${data.geoSpatialContext.dane.dwellings?.toLocaleString("es-CO") ?? "Sin dato en fuente"} / ${data.geoSpatialContext.dane.censusYear ?? "Sin dato en fuente"}` : "Sin dato municipal"} detail="DANE"/>
-        <ReportTableRow label="IPM municipal" value={!data.geoSpatialContext.dane.ipmAvailable ? "Sin dato municipal" : data.geoSpatialContext.dane.ipm === null ? "Sin dato en fuente" : `${data.geoSpatialContext.dane.ipm.toLocaleString("es-CO")}%`} detail="No corresponde a una medición individual del inmueble"/>
+        <ReportTableRow label="IPM municipal" value={!data.geoSpatialContext.dane.ipmAvailable ? "Sin dato municipal" : data.geoSpatialContext.dane.ipm === null ? "Sin dato en fuente" : `${data.geoSpatialContext.dane.ipm.toLocaleString("es-CO")}%`} detail={data.geoSpatialContext.dane.ipmUrban !== null ? `Urbano ${data.geoSpatialContext.dane.ipmUrban.toLocaleString("es-CO")}% · rural ${data.geoSpatialContext.dane.ipmRural?.toLocaleString("es-CO") ?? "s/d"}% · no es una medición del inmueble` : "No corresponde a una medición individual del inmueble"}/>
+        {data.geoSpatialContext.dane.municipalStratumDistribution && <ReportTableRow label="Viviendas por estrato" value={stratumSummary(data.geoSpatialContext.dane.municipalStratumDistribution)} detail="Distribución municipal · censo DANE"/>}
         <ReportTableRow label="Catalizadores de valorización" value={data.predictiveAnalysis.capitalGainCatalysts.length ? `${data.predictiveAnalysis.capitalGainCatalysts.length} identificados` : "Sin proyectos verificables"} detail="Fuentes disponibles al generar"/>
       </View>
-      <Text style={styles.sourceNote}>Trazabilidad: catastro IGAC vía Croma ({data.officialData.lookupMethod === "cadastral_id" ? "por número predial" : data.officialData.lookupMethod === "coordinates" ? "por coordenadas" : "sin consulta de predio"});{data.officialData.checkedAt ? ` fecha ${dateLabel(data.officialData.checkedAt)};` : " sin fecha confirmada por la fuente;"} estadísticas DANE{data.geoSpatialContext.dane.asOf ? ` con corte ${dateLabel(data.geoSpatialContext.dane.asOf)}` : " sin fecha de corte disponible"}. Precio mostrado: valor de oferta registrado en la plataforma, no avalúo comercial.</Text>
+      <Text style={styles.sourceNote}>Trazabilidad: catastro {data.officialData.lookupMethod === "import" ? "Bogotá (UAECD)" : "IGAC vía Croma"} ({data.officialData.lookupMethod === "cadastral_id" ? "por número predial" : data.officialData.lookupMethod === "coordinates" ? "por coordenadas" : data.officialData.lookupMethod === "import" ? "archivo de Catastro Bogotá" : "sin consulta de predio"});{data.officialData.checkedAt ? ` fecha ${dateLabel(data.officialData.checkedAt)};` : " sin fecha confirmada por la fuente;"} estadísticas DANE{data.geoSpatialContext.dane.asOf ? ` con corte ${dateLabel(data.geoSpatialContext.dane.asOf)}` : " sin fecha de corte disponible"}. Precio mostrado: valor de oferta registrado en la plataforma, no avalúo comercial.</Text>
       {data.warnings.length > 0 && <View style={[styles.callout, { marginTop: 6, marginBottom: 6 }]} wrap={false}><Text style={styles.calloutText}>VALIDACIONES Y FUENTES PENDIENTES: {data.warnings.slice(0, 4).join(" ")}</Text></View>}
       <Text style={styles.sourceNote}>Alcance: informe técnico-comercial automático basado en la ficha del inmueble y fuentes públicas disponibles. No sustituye visita pericial, certificado de tradición, avalúo comercial ni concepto de norma urbana oficial. La geometría y los datos territoriales son referenciales; pueden variar según cobertura y fecha de consulta.</Text>
       <View style={styles.reportContact} wrap={false}><Text style={styles.reportContactTitle}>DAVID BASTO · ING. CIVIL · ASESOR INMOBILIARIO</Text><Text style={styles.reportContactText}>Atención personalizada · WhatsApp +57 312 537 2457 · Propiedades con propósito</Text></View>

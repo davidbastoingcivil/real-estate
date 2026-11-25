@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import PropertyForm, { type PropertyFormData } from "@/components/admin/PropertyForm";
+import BogotaCadastralImport from "@/components/admin/BogotaCadastralImport";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function EditPropertyPage({ params }: { params: Promise<{ id: string }> }) {
@@ -55,5 +56,8 @@ export default async function EditPropertyPage({ params }: { params: Promise<{ i
     payment: (data.payment || []) as string[],
     featured: Boolean(data.featured),
   };
-  return <PropertyForm initialData={initialData} propertyTypes={propertyTypes || []}/>;
+  return <>
+    <PropertyForm initialData={initialData} propertyTypes={propertyTypes || []}/>
+    {(!data.municipality_code || data.municipality_code === "11001") && <BogotaCadastralImport propertyId={id}/>}
+  </>;
 }
